@@ -1,0 +1,74 @@
+# Turbo Highway 3D
+
+A fast, browser-based 3D highway driving game built with Three.js. Race through a curved and elevated alpine road, dodge traffic, use nitro, and chase a high score in a detailed PBR environment.
+
+![Turbo Highway 3D gameplay](docs/gameplay.png)
+
+## Highlights
+
+- Curved, gently elevated endless highway with road-aligned traffic and chase camera
+- Uneven 3D terrain with gravel shoulders, drainage ditches, guardrails, fences, reflectors, signs, and utility poles
+- Three distinct tree species plus rocks, ferns, bushes, grass, and wildflowers
+- PBR asphalt and terrain materials, HDR environment lighting, alpine panorama, shadows, fog, bloom, and cinematic color grading
+- Detailed player car with working brake lights, rotating tires, nitro effects, and contact shadow
+- Traffic, near-miss scoring, three-life collision system, speedometer, nitro bar, and FPS counter
+- Instanced small vegetation and distance-aware scenery for better browser performance
+
+## Run locally
+
+Requirements: Node.js 20.19 or newer (or Node.js 22.12+).
+
+```bash
+npm install
+npm run dev
+```
+
+Open the local URL printed by Vite. For a production build:
+
+```bash
+npm run build
+npm run preview
+```
+
+## Controls
+
+| Action | Keyboard |
+| --- | --- |
+| Accelerate | `W` or `Up Arrow` |
+| Brake | `S` or `Down Arrow` |
+| Steer | `A` / `D` or `Left` / `Right Arrow` |
+| Nitro | `Shift` |
+| Restart after game over | `R` |
+
+## Project structure
+
+```text
+src/
+  main.js         Game loop, scoring, collisions, and chase camera
+  path.js         Shared curved/elevated road centerline
+  road.js         Road mesh, lane markings, rails, signs, and roadside fixtures
+  environment.js  Terrain, vegetation, models, recycling, and instancing
+  car.js          Player vehicle movement and visual effects
+  traffic.js      AI traffic placement, recycling, and collision checks
+  effects.js      Nitro and crash effects
+  scene.js        Renderer, lighting, fog, environment map, and post-processing
+  hud.js          Score, lives, speed, nitro, and FPS interface
+public/assets/     Runtime models, textures, panorama, and Draco decoder
+```
+
+## Performance notes
+
+The world recycles deterministic 120-metre terrain slices on exact grid boundaries to prevent roadside texture swimming or geometry pops. Small vegetation is rendered with GPU instancing, while distant scenery uses cheaper representations to keep draw calls under control.
+
+## Assets and credits
+
+The project uses CC0 environment assets from [Poly Haven](https://polyhaven.com/) and project-specific generated tree cutouts. Full attribution and source details are in:
+
+- [`public/assets/realistic/SOURCES.md`](public/assets/realistic/SOURCES.md)
+- [`public/assets/terrain/SOURCES.md`](public/assets/terrain/SOURCES.md)
+
+The Ferrari model and any separately supplied vehicle assets remain subject to their original licenses; verify their redistribution terms before commercial use.
+
+## License
+
+The source code is released under the [MIT License](LICENSE). Third-party assets retain their respective licenses as described above.

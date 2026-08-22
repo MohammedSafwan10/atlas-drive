@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Turbo Highway 3D</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', system-ui, sans-serif; }
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+      background: radial-gradient(ellipse at center, transparent 54%, rgba(4, 10, 18, 0.11) 78%, rgba(1, 4, 9, 0.28) 100%);
+      mix-blend-mode: multiply;
+    }
+    #game { display: block; width: 100%; height: 100%; }
+
+    #hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; color: #fff; }
+
+    .hud-top-left {
+      position: absolute; top: 18px; left: 22px;
+      background: rgba(10, 14, 20, 0.55); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 10px 16px; backdrop-filter: blur(6px);
+    }
+    .hud-label { font-size: 11px; letter-spacing: 2px; color: #9fb4c8; text-transform: uppercase; }
+    #score { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    #lives { font-size: 18px; letter-spacing: 5px; margin-top: 4px; color: #ff5a5a; text-shadow: 0 0 10px rgba(255,60,60,0.5); }
+    #lives .lost { color: #66707d; opacity: 0.28; filter: grayscale(1); text-shadow: none; }
+
+    .hud-top-right {
+      position: absolute; top: 18px; right: 22px;
+      min-width: 82px; text-align: right;
+      background: rgba(10, 14, 20, 0.55); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 9px 13px; backdrop-filter: blur(6px);
+    }
+    #fps { font-size: 22px; font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; }
+    #fps small { font-size: 10px; font-weight: 600; letter-spacing: 1px; color: #9fb4c8; }
+
+    .hud-bottom-right {
+      position: absolute; bottom: 22px; right: 26px; text-align: right;
+      background: rgba(10, 14, 20, 0.55); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 10px 18px; backdrop-filter: blur(6px);
+    }
+    #speed { font-size: 42px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+    #speed small { font-size: 15px; font-weight: 500; color: #9fb4c8; }
+
+    .nitro-wrap { position: absolute; bottom: 26px; left: 26px; width: 220px; }
+    .nitro-wrap .hud-label { margin-bottom: 6px; }
+    #nitro-bar {
+      width: 100%; height: 10px; border-radius: 6px;
+      background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); overflow: hidden;
+    }
+    #nitro-fill {
+      height: 100%; width: 100%; border-radius: 6px;
+      background: linear-gradient(90deg, #1e90ff, #00e5ff);
+      transition: width 0.08s linear;
+    }
+
+    #nearmiss {
+      position: absolute; top: 34%; left: 50%; transform: translateX(-50%);
+      font-size: 26px; font-weight: 800; color: #ffd54a; letter-spacing: 3px;
+      text-shadow: 0 0 18px rgba(255, 200, 40, 0.8); opacity: 0; transition: opacity 0.25s;
+    }
+
+    #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+
+    .overlay {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
+      background: radial-gradient(ellipse at center, rgba(8,12,18,0.55), rgba(4,6,10,0.85));
+      pointer-events: auto; text-align: center;
+    }
+    .overlay h1 { font-size: 52px; font-weight: 800; letter-spacing: 4px; text-shadow: 0 4px 30px rgba(30,144,255,0.5); }
+    .overlay p { color: #b8c8d8; font-size: 16px; line-height: 1.7; }
+    .overlay .key { display: inline-block; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; padding: 1px 8px; font-weight: 600; }
+    #gameover-screen { display: none; }
+    #gameover-screen h1 { color: #ff5a5a; text-shadow: 0 4px 30px rgba(255,60,60,0.5); }
+    #final-score { font-size: 34px; font-weight: 800; color: #ffd54a; }
+    .btn {
+      pointer-events: auto; cursor: pointer; margin-top: 8px;
+      background: linear-gradient(135deg, #1e90ff, #0064c8); color: #fff;
+      border: none; border-radius: 8px; padding: 12px 34px;
+      font-size: 17px; font-weight: 700; letter-spacing: 1px;
+      box-shadow: 0 4px 20px rgba(30,144,255,0.4); transition: transform 0.1s;
+    }
+    .btn:hover { transform: scale(1.05); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div class="hud-top-left">
+      <div class="hud-label">Score</div>
+      <div id="score">0</div>
+      <div id="lives">❤❤❤</div>
+    </div>
+
+    <div class="hud-top-right">
+      <div class="hud-label">Performance</div>
+      <div id="fps">--<small> FPS</small></div>
+    </div>
+
+    <div class="hud-bottom-right">
+      <div id="speed">0<small> km/h</small></div>
+    </div>
+
+    <div class="nitro-wrap">
+      <div class="hud-label">Nitro</div>
+      <div id="nitro-bar"><div id="nitro-fill"></div></div>
+    </div>
+
+    <div id="nearmiss">NEAR MISS +50</div>
+    <div id="flash"></div>
+
+    <div id="start-screen" class="overlay">
+      <h1>TURBO HIGHWAY 3D</h1>
+      <p>
+        <span class="key">W</span>/<span class="key">↑</span> accelerate &nbsp;·&nbsp;
+        <span class="key">S</span>/<span class="key">↓</span> brake &nbsp;·&nbsp;
+        <span class="key">A</span><span class="key">D</span>/<span class="key">←</span><span class="key">→</span> steer<br/>
+        <span class="key">Shift</span> nitro &nbsp;·&nbsp; 3 lives — dodge traffic, chain near-misses for bonus score
+      </p>
+      <button id="start-btn" class="btn">START ENGINE</button>
+    </div>
+
+    <div id="gameover-screen" class="overlay">
+      <h1>CRASHED</h1>
+      <p>Final score</p>
+      <div id="final-score">0</div>
+      <button id="restart-btn" class="btn">RESTART (R)</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
