@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Turbo Highway 3D</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', system-ui, sans-serif; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; font-family: 'Segoe UI', system-ui, sans-serif; }
     body::after {
       content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1;
       background: radial-gradient(ellipse at center, transparent 54%, rgba(4, 10, 18, 0.11) 78%, rgba(1, 4, 9, 0.28) 100%);
@@ -61,7 +61,10 @@
       text-shadow: 0 0 18px rgba(255, 200, 40, 0.8); opacity: 0; transition: opacity 0.25s;
     }
 
-    #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+    #flash {
+      position: absolute; inset: 0; background: #fff; opacity: 0;
+      pointer-events: none; will-change: opacity;
+    }
 
     .overlay {
       position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -84,6 +87,118 @@
     }
     .btn:hover { transform: scale(1.05); }
     .hidden { display: none !important; }
+
+    /* Touch controls (shown only on touch devices) */
+    #touch-controls { display: none; }
+    body.touch #touch-controls {
+      display: block;
+      position: absolute; inset: 0;
+      pointer-events: none;
+      -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tc-cluster {
+      position: absolute; bottom: 18px;
+      display: flex; align-items: flex-end; gap: 14px;
+      pointer-events: auto;
+    }
+    .tc-left { left: 18px; }
+    .tc-right { right: 18px; }
+    .tc-btn {
+      width: 74px; height: 74px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(10, 14, 20, 0.4);
+      color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 1px;
+      backdrop-filter: blur(6px);
+      touch-action: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .tc-btn.small { font-size: 13px; }
+    .tc-nitro { background: rgba(30, 100, 200, 0.35); border-color: rgba(0,229,255,0.5); }
+    .tc-btn.active { background: rgba(30,144,255,0.55); transform: scale(0.94); }
+    #tilt-toggle {
+      pointer-events: auto; cursor: pointer;
+      position: absolute; top: 70px; left: 22px;
+      padding: 6px 14px; border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(10, 14, 20, 0.45); color: #9fb4c8;
+      font-size: 11px; font-weight: 700; letter-spacing: 2px;
+    }
+    #tilt-toggle.on { color: #00e5ff; border-color: rgba(0,229,255,0.6); }
+    #pause-btn {
+      position: absolute; top: 18px; left: calc(50% + 92px);
+      width: 38px; height: 38px; border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.24);
+      background: rgba(10,14,20,0.66); color: #fff;
+      font-size: 15px; font-weight: 800; pointer-events: auto;
+      cursor: pointer; display: none;
+    }
+
+    /* Move HUD widgets out of the way of touch buttons */
+    body.touch .nitro-wrap { bottom: 118px; left: 18px; width: 180px; }
+    body.touch .hud-bottom-right { bottom: 118px; right: 18px; }
+
+    /* Compact, compositing-friendly layout for landscape phones. */
+    body.touch::after { display: none; }
+    body.touch .hud-top-left,
+    body.touch .hud-top-right,
+    body.touch .hud-bottom-right,
+    body.touch .tc-btn { backdrop-filter: none; }
+    body.touch .hud-top-left {
+      top: max(8px, env(safe-area-inset-top));
+      left: max(10px, env(safe-area-inset-left));
+      padding: 6px 10px; border-radius: 8px;
+    }
+    body.touch .hud-top-right {
+      top: max(8px, env(safe-area-inset-top));
+      right: max(10px, env(safe-area-inset-right));
+      min-width: 68px; padding: 6px 9px; border-radius: 8px;
+    }
+    body.touch .hud-label { font-size: 8px; letter-spacing: 1.4px; }
+    body.touch #score { font-size: 20px; }
+    body.touch #lives { font-size: 13px; letter-spacing: 3px; margin-top: 1px; }
+    body.touch #fps { font-size: 17px; }
+    body.touch #fps small { font-size: 8px; }
+    body.touch .tc-cluster {
+      bottom: max(10px, env(safe-area-inset-bottom));
+      gap: 8px;
+    }
+    body.touch .tc-left { left: max(10px, env(safe-area-inset-left)); }
+    body.touch .tc-right { right: max(10px, env(safe-area-inset-right)); }
+    body.touch .tc-btn {
+      width: 50px; height: 50px;
+      font-size: 17px; border-width: 1px;
+      background: rgba(10, 14, 20, 0.66);
+    }
+    body.touch .tc-btn.small,
+    body.touch #t-gas,
+    body.touch #t-nitro { font-size: 10px; letter-spacing: 0.4px; }
+    body.touch #t-gas { width: 56px; height: 56px; }
+    body.touch #tilt-toggle {
+      top: max(10px, env(safe-area-inset-top)); left: 50%;
+      transform: translateX(-50%);
+      padding: 5px 11px; font-size: 9px; letter-spacing: 1.2px;
+      background: rgba(10, 14, 20, 0.68);
+    }
+    body.touch #pause-btn {
+      top: max(10px, env(safe-area-inset-top)); left: calc(50% + 72px);
+      width: 34px; height: 34px; border-radius: 9px; font-size: 13px;
+    }
+    body.touch .nitro-wrap {
+      bottom: max(76px, calc(env(safe-area-inset-bottom) + 70px));
+      left: max(10px, env(safe-area-inset-left)); width: 132px;
+    }
+    body.touch #nitro-bar { height: 7px; }
+    body.touch .hud-bottom-right {
+      bottom: max(76px, calc(env(safe-area-inset-bottom) + 70px));
+      right: max(10px, env(safe-area-inset-right)); padding: 6px 10px;
+    }
+    body.touch #speed { font-size: 27px; }
+    body.touch #speed small { font-size: 10px; }
+    body.touch .overlay { padding: 16px max(20px, env(safe-area-inset-left)); }
+    body.touch .overlay h1 { font-size: clamp(26px, 8vw, 42px); }
+    body.touch .overlay p { font-size: 12px; line-height: 1.45; }
+    body.touch .btn { padding: 9px 24px; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -113,13 +228,29 @@
     <div id="nearmiss">NEAR MISS +50</div>
     <div id="flash"></div>
 
+    <div id="touch-controls">
+      <button id="tilt-toggle">TILT STEER</button>
+      <div class="tc-cluster tc-left">
+        <button class="tc-btn" id="t-left">&#9664;</button>
+        <button class="tc-btn" id="t-right">&#9654;</button>
+      </div>
+      <div class="tc-cluster tc-right">
+        <button class="tc-btn small" id="t-brake">BRAKE</button>
+        <button class="tc-btn" id="t-gas">GAS</button>
+        <button class="tc-btn tc-nitro" id="t-nitro">N2O</button>
+      </div>
+    </div>
+
+    <button id="pause-btn" aria-label="Pause game">Ⅱ</button>
+
     <div id="start-screen" class="overlay">
       <h1>TURBO HIGHWAY 3D</h1>
       <p>
         <span class="key">W</span>/<span class="key">↑</span> accelerate &nbsp;·&nbsp;
         <span class="key">S</span>/<span class="key">↓</span> brake &nbsp;·&nbsp;
         <span class="key">A</span><span class="key">D</span>/<span class="key">←</span><span class="key">→</span> steer<br/>
-        <span class="key">Shift</span> nitro &nbsp;·&nbsp; 3 lives — dodge traffic, chain near-misses for bonus score
+        <span class="key">Shift</span> nitro &nbsp;·&nbsp; 3 lives — dodge traffic, chain near-misses for bonus score<br/>
+        <em style="font-size:13px;color:#8fa3b8;">On touch devices: on-screen pedals + arrows, or enable TILT STEER</em>
       </p>
       <button id="start-btn" class="btn">START ENGINE</button>
     </div>
@@ -129,6 +260,13 @@
       <p>Final score</p>
       <div id="final-score">0</div>
       <button id="restart-btn" class="btn">RESTART (R)</button>
+    </div>
+
+    <div id="pause-screen" class="overlay" style="display:none">
+      <h1>PAUSED</h1>
+      <p>Take a breath. Your run is frozen.</p>
+      <button id="resume-btn" class="btn">RESUME</button>
+      <button id="pause-restart-btn" class="btn">RESTART</button>
     </div>
   </div>
 

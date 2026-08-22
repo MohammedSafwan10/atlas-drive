@@ -38,7 +38,11 @@ npm run preview
 | Brake | `S` or `Down Arrow` |
 | Steer | `A` / `D` or `Left` / `Right Arrow` |
 | Nitro | `Shift` |
+| Pause / resume | `P` or `Escape` |
 | Restart after game over | `R` |
+
+On Android and other touch devices, use the on-screen steering, brake, gas,
+nitro, and pause controls. Tilt steering can be enabled from the top control.
 
 ## Project structure
 
@@ -55,6 +59,35 @@ src/
   hud.js          Score, lives, speed, nitro, and FPS interface
 public/assets/     Runtime models, textures, panorama, and Draco decoder
 ```
+
+## Android
+
+The project includes a Capacitor Android wrapper with landscape orientation,
+immersive fullscreen, touch/tilt controls, and an adaptive mobile graphics
+profile. Requirements are Android Studio, Android SDK 36, and Java 21.
+
+Build and sync the web game into Android:
+
+```bash
+npm run android:sync
+```
+
+Run it on a connected phone or emulator:
+
+```bash
+npm run android:run
+```
+
+Create a locally signed debug APK on Windows:
+
+```bash
+npm run android:apk
+```
+
+The APK is written to
+`android/app/build/outputs/apk/debug/app-debug.apk`. Use `npm run android:open`
+to open the native project in Android Studio for release signing and Play Store
+bundle generation.
 
 ## Performance notes
 

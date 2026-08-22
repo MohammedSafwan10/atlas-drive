@@ -1,6 +1,7 @@
 // Nitro: twin exhaust flames + soft GPU particle jet, speed FOV kick
 import * as THREE from 'three';
 import { roadPoint, roadYaw } from './path.js';
+import { GRAPHICS, IS_MOBILE } from './platform.js';
 
 function makeSparkTexture() {
   const c = document.createElement('canvas');
@@ -54,7 +55,7 @@ export class Effects {
     this.baseFov = camera.fov;
 
     // ---- Nitro particle jet ----
-    const count = 400;
+    const count = GRAPHICS.particleCount;
     const geo = new THREE.BufferGeometry();
     this.positions = new Float32Array(count * 3);
     this.lives = new Float32Array(count);
@@ -158,7 +159,11 @@ export class Effects {
     }
 
     // FOV kick with speed + nitro
-    const targetFov = this.baseFov + (car.speed / 88) * 10 + (nitroActive ? 8 : 0);
+    // A large FOV kick makes the player car look tiny on a phone. Keep just a
+    // subtle sense of speed on mobile while preserving the desktop effect.
+    const speedKick = IS_MOBILE ? 3 : 10;
+    const nitroKick = IS_MOBILE ? 3 : 8;
+    const targetFov = this.baseFov + (car.speed / 88) * speedKick + (nitroActive ? nitroKick : 0);
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 4);
     this.camera.updateProjectionMatrix();
   }

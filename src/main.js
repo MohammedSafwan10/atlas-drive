@@ -8,9 +8,10 @@ import { Effects } from './effects.js';
 import { HUD } from './hud.js';
 import { Input } from './input.js';
 import { roadPoint } from './path.js';
+import { IS_MOBILE } from './platform.js';
 
 const canvas = document.getElementById('game');
-const { renderer, scene, camera, update: updateScene } = createScene(canvas);
+const { renderer, scene, camera, update: updateScene, updatePerformance } = createScene(canvas);
 
 const road = new Road(scene);
 const environment = new Environment(scene);
@@ -19,21 +20,29 @@ const traffic = new Traffic(scene);
 const effects = new Effects(scene, camera);
 const hud = new HUD();
 const input = new Input();
+const previewZ = import.meta.env.DEV
+  ? Number(new URLSearchParams(location.search).get('previewZ'))
+  : Number.NaN;
 
-let state = 'start'; // start | playing | crashed
+let state = 'start'; // start | playing | paused | crashed
 let score = 0;
 let lives = 3;
 const MAX_LIVES = 3;
 let invulnerable = 0; // seconds of blink after a hit
-let camPos = new THREE.Vector3(0, 4.2, 9);
+let camPos = new THREE.Vector3(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
 let camLook = new THREE.Vector3(0, 1, -10);
+let suspended = document.hidden;
 
 function startGame() {
   car.reset();
+  if (Number.isFinite(previewZ)) {
+    car.z = previewZ;
+    car.syncToRoad();
+  }
   traffic.reset();
-  road.reset(0);
-  environment.reset(0);
-  camPos.set(0, 4.2, 9);
+  road.reset(car.z);
+  environment.reset(car.z);
+  camPos.set(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
   camLook.set(0, 1, -10);
   score = 0;
   lives = MAX_LIVES;
@@ -42,39 +51,73 @@ function startGame() {
   state = 'playing';
   hud.hideStart();
   hud.hideGameOver();
+  hud.hidePause();
+  hud.showPauseButton(true);
+}
+
+function pauseGame() {
+  if (state !== 'playing') return;
+  state = 'paused';
+  input.clearAll();
+  hud.showPause();
+}
+
+function resumeGame() {
+  if (state !== 'paused') return;
+  state = 'playing';
+  input.clearAll();
+  clock.getDelta();
+  hud.hidePause();
+  hud.showPauseButton(true);
 }
 
 function hit() {
   if (state !== 'playing' || invulnerable > 0) return;
   lives -= 1;
+  // Give impact immediate physical feedback and let the traffic pull away.
+  // Keeping the player model visible avoids the old two-second "glitch" blink.
+  car.speed *= 0.5;
   hud.setLives(lives, MAX_LIVES);
   hud.crashFlash();
   if (lives <= 0) {
     state = 'crashed';
     car.crashed = true;
+    hud.showPauseButton(false);
     setTimeout(() => hud.showGameOver(score), 500);
   } else {
-    invulnerable = 2.0; // brief mercy window with blinking
+    invulnerable = 1.15;
   }
 }
 
-hud.bind(startGame, startGame);
+hud.bind(startGame, startGame, pauseGame, resumeGame);
 addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && state === 'crashed') startGame();
   if (e.code === 'Enter' && state === 'start') startGame();
+  if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'playing') pauseGame();
+  else if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'paused') resumeGame();
 });
 
 const clock = new THREE.Clock();
+
+document.addEventListener('visibilitychange', () => {
+  suspended = document.hidden;
+  input.clearAll();
+  if (suspended && state === 'playing') pauseGame();
+  if (!suspended) clock.getDelta();
+});
 
 function tick() {
   requestAnimationFrame(tick);
   const frameTime = clock.getDelta();
   const dt = Math.min(frameTime, 0.05);
 
+  if (suspended) return;
+  updatePerformance(frameTime);
+
   if (state === 'playing') {
     if (invulnerable > 0) {
       invulnerable -= dt;
-      car.group.visible = Math.floor(invulnerable * 10) % 2 === 0 || invulnerable <= 0;
+      car.group.visible = true;
     } else {
       car.group.visible = true;
     }
@@ -83,28 +126,47 @@ function tick() {
     car.z -= car.speed * dt;
     car.syncToRoad();
 
+    // Air-time bonus from ramp jumps
+    if (car.justLanded) {
+      const bonus = 50 + Math.round(car.lastAirTime * 250);
+      score += bonus;
+      hud.showNearMiss(`AIR TIME +${bonus}`);
+      car.justLanded = false;
+    }
+
     // Score: distance + speed bonus
     score += car.speed * dt * (1 + car.speed / 60);
 
     traffic.update(dt, car.z, car.x, () => {
       score += 50;
       hud.showNearMiss();
-    }, hit);
+    }, () => {
+      if (!car.airborne) hit(); // flying over traffic is safe
+    });
   }
 
-  // World updates (always, so scene looks alive behind menus)
-  road.update(car.z);
-  environment.update(car.z);
-  updateScene(car.group.position);
-  effects.update(dt, car, car.nitroActive && state === 'playing', state === 'crashed');
+  // Freeze simulation/effects while paused; the last frame remains rendered.
+  if (state !== 'paused') {
+    road.update(car.z);
+    environment.update(car.z);
+    updateScene(car.group.position);
+    effects.update(dt, car, car.nitroActive && state === 'playing', state === 'crashed');
+  }
 
   // Chase camera: smooth follow with speed pullback
   const speedPull = Math.min(car.speed / 88, 1);
-  const targetPos = roadPoint(car.z + 9 + speedPull * 2.5, car.x * 0.55, 4.2 + speedPull * 0.6);
-  const targetLook = roadPoint(car.z - 12, car.x * 0.8, 1.1);
-  const lerp = Math.min(1, dt * 5);
-  camPos.lerp(targetPos, lerp);
-  camLook.lerp(targetLook, lerp);
+  const chaseDistance = IS_MOBILE ? 5.2 : 7.2;
+  const chaseHeight = IS_MOBILE ? 2.85 : 3.65;
+  const targetPos = roadPoint(
+    car.z + chaseDistance + speedPull * (IS_MOBILE ? 0.25 : 1.5),
+    car.x * 0.62,
+    chaseHeight + speedPull * (IS_MOBILE ? 0.16 : 0.42),
+  );
+  const targetLook = roadPoint(car.z - (IS_MOBILE ? 15 : 14), car.x * 0.82, 0.95);
+  // Anchor the chase rig in the same moving road frame as the car. Interpolating
+  // world-space Z created both speed-dependent zoom-out and visible hunting.
+  camPos.copy(targetPos);
+  camLook.copy(targetLook);
   camera.position.copy(camPos);
   camera.lookAt(camLook);
 

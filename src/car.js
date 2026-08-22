@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { roadPitch, roadPoint, roadYaw } from './path.js';
+import { SEG_LEN, roadPitch, roadPoint, roadYaw } from './path.js';
+import { modeForSegment, rampLips, rampSurfaceLift } from './features.js';
+
+const GRAVITY = 16;
+const RAMP_MIN_LAUNCH_SPEED = 16;
 
 // Player car: real Ferrari GLB model (Draco) with procedural fallback
 export class Car {
@@ -155,15 +159,23 @@ export class Car {
     this.nitroAmount = 1.0;
     this.nitroActive = false;
     this.crashed = false;
+    this.airborne = false;
+    this.airY = 0;
+    this.airVy = 0;
+    this.airTime = 0;
+    this.justLanded = false;
+    this.lastAirTime = 0;
     this.group.position.set(0, 0, 0);
     this.group.rotation.set(0, 0, 0);
     this.syncToRoad();
   }
 
   syncToRoad() {
-    roadPoint(this.z, this.x, 0, this.group.position);
+    const surfaceLift = this.airborne ? 0 : rampSurfaceLift(this.z);
+    roadPoint(this.z, this.x, (this.airY || 0) + surfaceLift, this.group.position);
+    const airPitch = this.airborne ? -Math.atan2(this.airVy, Math.max(20, this.speed)) * 0.55 : 0;
     this.group.rotation.set(
-      roadPitch(this.z),
+      roadPitch(this.z) + airPitch,
       roadYaw(this.z) - this.steerAngle * 0.055,
       this.steerAngle * 0.016,
     );
@@ -200,13 +212,46 @@ export class Car {
     this.speed = Math.max(0, Math.min(this.speed, maxSpeed));
 
     // Steering: speed-sensitive lateral movement with grip falloff
+    const control = this.airborne ? 0.35 : 1; // limited air control
     const speedFactor = Math.min(1, this.speed / 30);
-    const steerRate = 9 * speedFactor;
+    const steerRate = 9 * speedFactor * control;
     this.steerAngle += (input.steer * steerRate - this.steerAngle) * Math.min(1, dt * 8);
     // Lateral grip grows with speed so steering stays effective at nitro velocities
-    const lateralGain = 1 + (this.speed / MAX_SPEED) * 1.1;
+    const lateralGain = (1 + (this.speed / MAX_SPEED) * 1.1) * control;
     this.x += this.steerAngle * dt * lateralGain;
     this.x = Math.max(-5.2, Math.min(5.2, this.x));
+
+    // Ramp launch: crossing a ramp lip fast enough puts the car airborne
+    if (!this.airborne && this.speed > RAMP_MIN_LAUNCH_SPEED && Math.abs(this.x) < 6.2) {
+      const lip = this.z - this.speed * dt; // z after this frame's move
+      const k = Math.round(lip / SEG_LEN);
+      if (modeForSegment(k) === 'ramp') {
+        for (const edge of rampLips(k)) {
+          if (this.z >= edge && lip < edge) {
+            this.airborne = true;
+            this.airTime = 0;
+            this.airY = Math.max(this.airY, 1.1);
+            this.airVy = 3.2 + this.speed * 0.085;
+            break;
+          }
+        }
+      }
+    }
+
+    // Airborne integration
+    if (this.airborne) {
+      this.airTime += dt;
+      this.airY += this.airVy * dt;
+      this.airVy -= GRAVITY * dt;
+      if (this.airY <= 0 && this.airVy < 0) {
+        this.airY = 0;
+        this.airborne = false;
+        if (this.airTime > 0.25) {
+          this.justLanded = true;
+          this.lastAirTime = this.airTime;
+        }
+      }
+    }
 
     // Visual: yaw + body roll
     this.syncToRoad();

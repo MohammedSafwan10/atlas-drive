@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { LANE_X } from './road.js';
 import { roadPitch, roadPoint, roadYaw } from './path.js';
+import { GRAPHICS } from './platform.js';
 
 // AI traffic: pooled vehicles (real Ferrari GLB clones with varied paint) in lanes at varied speeds
 const COLORS = [0x3a6ea5, 0x777777, 0x8a2f2f, 0x2f5e3a, 0x3f3f46, 0xb8b8b8, 0x8a7a2f, 0x2f2f38];
@@ -26,7 +27,7 @@ export class Traffic {
     const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 14);
     wheelGeo.rotateZ(Math.PI / 2);
 
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < GRAPHICS.trafficCount; i++) {
       const color = COLORS[i % COLORS.length];
       const paint = new THREE.MeshPhysicalMaterial({ color, metalness: 0.8, roughness: 0.35, clearcoat: 0.8, clearcoatRoughness: 0.2 });
 
@@ -113,8 +114,9 @@ export class Traffic {
   update(dt, playerZ, playerX, onNearMiss, onCrash) {
     // Maintain traffic density
     this.spawnTimer -= dt;
-    const active = this.cars.filter(c => c.mesh.visible).length;
-    if (active < 9 && this.spawnTimer <= 0) {
+    let active = 0;
+    for (const car of this.cars) if (car.mesh.visible) active += 1;
+    if (active < GRAPHICS.trafficCount && this.spawnTimer <= 0) {
       this.spawn(playerZ);
       this.spawnTimer = 0.5;
     }

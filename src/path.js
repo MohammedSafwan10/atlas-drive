@@ -2,6 +2,8 @@ import * as THREE from 'three';
 
 // Shared endless highway centerline. Long wavelengths avoid arcade-like zigzags;
 // combining two waves prevents the route from looking mechanically periodic.
+export const SEG_LEN = 120;
+
 export function roadCenterX(z) {
   return Math.sin(z * 0.0085 + 0.7) * 16 + Math.sin(z * 0.003 - 1.1) * 6;
 }

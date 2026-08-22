@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { roadCenterX, roadElevation, roadPoint } from './path.js';
+import { GRAPHICS, IS_MOBILE, scaledCount } from './platform.js';
 
 // Photoreal environment assets. The GLBs are web-optimized 1K PBR versions of
 // Poly Haven CC0 scans; the trees use high-resolution alpha cutouts on crossed
@@ -19,7 +20,7 @@ const MODEL_URLS = {
 
 const TERRAIN_WIDTH = 600;
 const TERRAIN_LENGTH = 1200;
-const TERRAIN_Z_SEGMENTS = 160;
+const TERRAIN_Z_SEGMENTS = GRAPHICS.terrainSegments;
 const TERRAIN_X_COORDS = [
   -300, -220, -160, -115, -82, -58, -42, -31, -23, -18, -16, -14.5, -13,
   -11.5, -10, -8.5, -7, -6.6, 0, 6.6, 7, 8.5, 10, 11.5, 13, 14.5, 16,
@@ -218,7 +219,7 @@ export class Environment {
     this.group = new THREE.Group();
     scene.add(this.group);
 
-    const maxAnisotropy = 8;
+    const maxAnisotropy = GRAPHICS.anisotropy;
     const texLoader = new THREE.TextureLoader();
     // Each scan covers roughly four world metres. All three materials share the
     // same world-space texel scale, so the border never stretches or swims.
@@ -230,8 +231,7 @@ export class Environment {
 
     const groundMat = new THREE.MeshStandardMaterial({
       map: forest.diffuse,
-      normalMap: forest.normal,
-      roughnessMap: forest.roughness,
+      ...(!IS_MOBILE && { normalMap: forest.normal, roughnessMap: forest.roughness }),
       color: 0x91a979,
       normalScale: new THREE.Vector2(1.25, 1.25),
       roughness: 1,
@@ -249,16 +249,14 @@ export class Environment {
     // Independent scanned materials follow the 3D shoulder and ditch profile.
     const shoulderMat = new THREE.MeshStandardMaterial({
       map: gravel.diffuse,
-      normalMap: gravel.normal,
-      roughnessMap: gravel.roughness,
+      ...(!IS_MOBILE && { normalMap: gravel.normal, roughnessMap: gravel.roughness }),
       normalScale: new THREE.Vector2(1.35, 1.35),
       roughness: 1,
       metalness: 0,
     });
     const ditchMat = new THREE.MeshStandardMaterial({
       map: dirt.diffuse,
-      normalMap: dirt.normal,
-      roughnessMap: dirt.roughness,
+      ...(!IS_MOBILE && { normalMap: dirt.normal, roughnessMap: dirt.roughness }),
       normalScale: new THREE.Vector2(1.5, 1.5),
       roughness: 1,
       metalness: 0,
@@ -322,7 +320,17 @@ export class Environment {
 
     // Lightweight crossed cards remain only in the distance. Nearby silhouettes
     // are supplied by several optimized 3D species below.
-    this.trees = makePool(treePrototypes, 48, 8.5, 14, 30, 74);
+    if (IS_MOBILE) {
+      // Each crossed-card tree becomes one merged geometry and one instanced
+      // draw call. This replaces dozens of individual transparent meshes.
+      treePrototypes.forEach((prototype) => {
+        const mergedTree = mergeStaticModel(prototype);
+        this._makeInstancedPool(mergedTree, 12, 8.5, 14, 30, 74, { widthScale: 1 });
+      });
+      this.trees = [];
+    } else {
+      this.trees = makePool(treePrototypes, 48, 8.5, 14, 30, 74);
+    }
 
     Promise.all([
       loadModel(loader, MODEL_URLS.boulder),
@@ -349,20 +357,22 @@ export class Environment {
         });
       });
 
-      this.trees.push(...makePool(realTrees, 9, 8, 14.5, 16, 45));
+      // A few true 3D species near the mobile road greatly improve silhouettes;
+      // crossed-card trees remain in the distance to keep draw cost bounded.
+      this.trees.push(...makePool(realTrees, IS_MOBILE ? 3 : 9, 8, 14.5, 16, 45));
 
       this.props = [
-        ...makePool(boulders, 20, 1.4, 2.8, 13, 42),
-        ...makePool(rocks, 34, 0.45, 1.15, 10, 25),
-        ...makePool(ferns, 42, 0.55, 1.05, 12, 30),
+        ...makePool(boulders, scaledCount(20, 7), 1.4, 2.8, 13, 42),
+        ...makePool(rocks, scaledCount(34, 12), 0.45, 1.15, 10, 25),
+        ...makePool(ferns, scaledCount(42, 14), 0.55, 1.05, 12, 30),
       ];
-      if (grasses[0]) this._makeInstancedPool(grasses[0], 72, 0.3, 0.64, 13, 28);
+      if (grasses[0]) this._makeInstancedPool(grasses[0], scaledCount(72, 28), 0.3, 0.64, 13, 28);
 
       const bush = new THREE.Mesh(
         new THREE.IcosahedronGeometry(1, 1),
         new THREE.MeshStandardMaterial({ color: 0x3f6c32, roughness: 0.96, metalness: 0 }),
       );
-      this._makeInstancedPool(bush, 34, 0.55, 1.25, 15, 48, {
+      this._makeInstancedPool(bush, scaledCount(34, 14), 0.55, 1.25, 15, 48, {
         widthScale: 1.35,
         colors: [0x315b29, 0x476f35, 0x5b7d3c],
       });
@@ -373,7 +383,7 @@ export class Environment {
         flowerGeometry,
         new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true }),
       );
-      this._makeInstancedPool(flower, 110, 0.2, 0.42, 13, 36, {
+      this._makeInstancedPool(flower, scaledCount(110, 36), 0.2, 0.42, 13, 36, {
         widthScale: 0.65,
         colors: [0xf4d84e, 0xf1f0d2, 0xc6a6e8, 0xe89b5b],
       });
@@ -431,7 +441,7 @@ export class Environment {
     const pool = { mesh, items, minDist, maxDist, widthScale: options.widthScale || 1 };
     this.instancedPools.push(pool);
     this.group.add(mesh);
-    this._updateInstancedPool(pool, 0, false);
+    this._updateInstancedPool(pool, 0, true);
     return pool;
   }
 
@@ -440,22 +450,26 @@ export class Environment {
     const position = new THREE.Vector3();
     const quaternion = new THREE.Quaternion();
     const scale = new THREE.Vector3();
+    let changed = false;
     for (let i = 0; i < pool.items.length; i++) {
       const item = pool.items[i];
       if (reset) item.z = playerZ + 30 - Math.random() * 400;
-      if (item.z > playerZ + 30) {
+      const recycled = item.z > playerZ + 30;
+      if (recycled) {
         item.z = playerZ - 290 - Math.random() * 130;
         item.lateral = (Math.random() < 0.5 ? -1 : 1) * (pool.minDist + Math.random() * (pool.maxDist - pool.minDist));
         item.yaw = Math.random() * Math.PI * 2;
       }
+      if (!reset && !recycled) continue;
       roadPoint(item.z, item.lateral, 0, position);
       position.y = terrainHeightAt(position.x, position.z);
       quaternion.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, item.yaw);
       scale.set(item.scale * pool.widthScale, item.scale, item.scale * pool.widthScale);
       matrix.compose(position, quaternion, scale);
       pool.mesh.setMatrixAt(i, matrix);
+      changed = true;
     }
-    pool.mesh.instanceMatrix.needsUpdate = true;
+    if (changed) pool.mesh.instanceMatrix.needsUpdate = true;
   }
 
   update(playerZ) {

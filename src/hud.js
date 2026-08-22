@@ -8,6 +8,8 @@ export class HUD {
     this.flashEl = document.getElementById('flash');
     this.startScreen = document.getElementById('start-screen');
     this.gameoverScreen = document.getElementById('gameover-screen');
+    this.pauseScreen = document.getElementById('pause-screen');
+    this.pauseButton = document.getElementById('pause-btn');
     this.finalScoreEl = document.getElementById('final-score');
     this.livesEl = document.getElementById('lives');
     this.fpsEl = document.getElementById('fps');
@@ -18,11 +20,14 @@ export class HUD {
     this.displayFps = 60;
   }
 
-  bind(startFn, restartFn) {
+  bind(startFn, restartFn, pauseFn, resumeFn) {
     this.onStart = startFn;
     this.onRestart = restartFn;
     document.getElementById('start-btn').addEventListener('click', startFn);
     document.getElementById('restart-btn').addEventListener('click', restartFn);
+    document.getElementById('pause-restart-btn').addEventListener('click', restartFn);
+    this.pauseButton.addEventListener('click', pauseFn);
+    document.getElementById('resume-btn').addEventListener('click', resumeFn);
   }
 
   update(car, score) {
@@ -49,15 +54,19 @@ export class HUD {
       `<span class="lost">${'❤'.repeat(Math.max(0, total - n))}</span>`;
   }
 
-  showNearMiss() {
+  showNearMiss(text = 'NEAR MISS +50') {
+    this.nearMissEl.textContent = text;
     this.nearMissEl.style.opacity = '1';
     clearTimeout(this.nearMissTimer);
     this.nearMissTimer = setTimeout(() => { this.nearMissEl.style.opacity = '0'; }, 700);
   }
 
   crashFlash() {
-    this.flashEl.style.opacity = '0.9';
-    setTimeout(() => { this.flashEl.style.transition = 'opacity 0.4s'; this.flashEl.style.opacity = '0'; }, 60);
+    this.flashEl.getAnimations().forEach((animation) => animation.cancel());
+    this.flashEl.animate(
+      [{ opacity: 0.58 }, { opacity: 0 }],
+      { duration: 260, easing: 'ease-out' },
+    );
   }
 
   showStart() {
@@ -76,5 +85,18 @@ export class HUD {
 
   hideGameOver() {
     this.gameoverScreen.style.display = 'none';
+  }
+
+  showPause() {
+    this.pauseScreen.style.display = 'flex';
+    this.pauseButton.style.display = 'none';
+  }
+
+  hidePause() {
+    this.pauseScreen.style.display = 'none';
+  }
+
+  showPauseButton(show) {
+    this.pauseButton.style.display = show ? 'block' : 'none';
   }
 }
