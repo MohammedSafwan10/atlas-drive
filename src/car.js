@@ -142,11 +142,17 @@ export class Car {
       draco.dispose();
     });
 
-    // Headlight beam
-    this.headlightBeam = new THREE.SpotLight(0xfff2cc, 0, 40, 0.5, 0.5, 1.2);
-    this.headlightBeam.position.set(0, 0.8, -2);
-    this.headlightBeam.target.position.set(0, 0, -20);
-    this.group.add(this.headlightBeam, this.headlightBeam.target);
+    // Twin focused headlight beams. These match the physical lamp positions and
+    // avoid the flat, oversized cone produced by the former central spotlight.
+    this.headlightBeams = [];
+    for (const lx of [-0.58, 0.58]) {
+      const beam = new THREE.SpotLight(0xffedcf, 6.5, 34, 0.22, 0.72, 1.35);
+      beam.position.set(lx, 0.72, -2.08);
+      beam.target.position.set(lx * 0.65, 0.05, -22);
+      beam.castShadow = false;
+      this.group.add(beam, beam.target);
+      this.headlightBeams.push(beam);
+    }
 
     this.reset();
   }
@@ -269,8 +275,8 @@ export class Car {
       if (i < 2) w.rotation.y = -this.steerAngle * 0.06;
     }
 
-    // Headlights on
-    this.headlightBeam.intensity = 25;
+    // Headlights remain deliberately subtle in the daylight alpine scene.
+    for (const beam of this.headlightBeams) beam.intensity = 6.5;
   }
 
   get kmh() { return Math.round(this.speed * 3.6); }

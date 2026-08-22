@@ -9,6 +9,9 @@ import { HUD } from './hud.js';
 import { Input } from './input.js';
 import { roadPoint } from './path.js';
 import { IS_MOBILE } from './platform.js';
+import { GameAudio } from './audio.js';
+import { modeForSegment } from './features.js';
+import { SEG_LEN } from './path.js';
 
 const canvas = document.getElementById('game');
 const { renderer, scene, camera, update: updateScene, updatePerformance } = createScene(canvas);
@@ -17,27 +20,37 @@ const road = new Road(scene);
 const environment = new Environment(scene);
 const car = new Car(scene);
 const traffic = new Traffic(scene);
-const effects = new Effects(scene, camera);
+const effects = new Effects(scene, camera, car);
 const hud = new HUD();
 const input = new Input();
+const audio = new GameAudio();
+const previewParams = new URLSearchParams(location.search);
 const previewZ = import.meta.env.DEV
-  ? Number(new URLSearchParams(location.search).get('previewZ'))
+  ? Number(previewParams.get('previewZ'))
   : Number.NaN;
+const previewBoost = import.meta.env.DEV && previewParams.has('previewBoost');
 
 let state = 'start'; // start | playing | paused | crashed
 let score = 0;
 let lives = 3;
 const MAX_LIVES = 3;
 let invulnerable = 0; // seconds of blink after a hit
+let impactShake = 0;
 let camPos = new THREE.Vector3(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
 let camLook = new THREE.Vector3(0, 1, -10);
 let suspended = document.hidden;
 
 function startGame() {
+  void audio.start().catch((error) => console.warn('Game audio unavailable', error));
   car.reset();
   if (Number.isFinite(previewZ)) {
     car.z = previewZ;
     car.syncToRoad();
+  }
+  if (previewBoost) {
+    car.speed = 58;
+    input.touch.gas = true;
+    input.touch.nitro = true;
   }
   traffic.reset();
   road.reset(car.z);
@@ -47,18 +60,22 @@ function startGame() {
   score = 0;
   lives = MAX_LIVES;
   invulnerable = 0;
+  impactShake = 0;
   hud.setLives(lives);
   state = 'playing';
   hud.hideStart();
   hud.hideGameOver();
   hud.hidePause();
   hud.showPauseButton(true);
+  audio.ui(620);
 }
 
 function pauseGame() {
   if (state !== 'playing') return;
   state = 'paused';
   input.clearAll();
+  audio.setPaused(true);
+  audio.ui(420);
   hud.showPause();
 }
 
@@ -66,6 +83,8 @@ function resumeGame() {
   if (state !== 'paused') return;
   state = 'playing';
   input.clearAll();
+  audio.setPaused(false);
+  audio.ui(680);
   clock.getDelta();
   hud.hidePause();
   hud.showPauseButton(true);
@@ -77,6 +96,9 @@ function hit() {
   // Give impact immediate physical feedback and let the traffic pull away.
   // Keeping the player model visible avoids the old two-second "glitch" blink.
   car.speed *= 0.5;
+  audio.crash();
+  impactShake = lives <= 0 ? 0.42 : 0.28;
+  if (navigator.vibrate) navigator.vibrate(lives <= 0 ? [90, 45, 120] : 70);
   hud.setLives(lives, MAX_LIVES);
   hud.crashFlash();
   if (lives <= 0) {
@@ -95,6 +117,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Enter' && state === 'start') startGame();
   if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'playing') pauseGame();
   else if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'paused') resumeGame();
+  if (e.code === 'KeyM') audio.toggleMute();
 });
 
 const clock = new THREE.Clock();
@@ -140,6 +163,7 @@ function tick() {
     traffic.update(dt, car.z, car.x, () => {
       score += 50;
       hud.showNearMiss();
+      audio.nearMiss();
     }, () => {
       if (!car.airborne) hit(); // flying over traffic is safe
     });
@@ -170,14 +194,17 @@ function tick() {
   camera.position.copy(camPos);
   camera.lookAt(camLook);
 
-  // Crash shake
-  if (state === 'crashed') {
-    camera.position.x += (Math.random() - 0.5) * 0.15;
-    camera.position.y += (Math.random() - 0.5) * 0.15;
+  // Short impact impulse only—never an endless post-crash vibration.
+  if (impactShake > 0) {
+    impactShake = Math.max(0, impactShake - dt);
+    const strength = Math.min(1, impactShake / 0.22) * 0.095;
+    camera.position.x += (Math.random() - 0.5) * strength;
+    camera.position.y += (Math.random() - 0.5) * strength;
   }
 
   hud.update(car, score);
   hud.updateFps(frameTime);
+  audio.update(car, state === 'playing', modeForSegment(Math.round(car.z / SEG_LEN)) === 'tunnel');
   renderer.render(scene, camera);
 }
 

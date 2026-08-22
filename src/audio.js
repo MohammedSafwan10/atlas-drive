@@ -1,0 +1,214 @@
+const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));
+
+const ENGINE_FILES = [
+  '/assets/audio/engine-low.ogg',
+  '/assets/audio/engine-mid.ogg',
+  '/assets/audio/engine-high.ogg',
+];
+
+// Reactive game mix: three CC0 RPM bands plus lightweight synthesized effects.
+export class GameAudio {
+  constructor() {
+    this.context = null;
+    this.ready = false;
+    this.loading = null;
+    this.muted = false;
+    this.paused = false;
+    this.engineSources = [];
+    this.engineGains = [];
+    this.noiseBuffer = null;
+    this.master = null;
+    this.roadGain = null;
+    this.nitroGain = null;
+    this.lastKmh = 0;
+    this.muteButton = document.getElementById('sound-btn');
+    this.muteButton?.addEventListener('click', () => this.toggleMute());
+  }
+
+  async start() {
+    if (!this.loading) this.loading = this._init();
+    if (this.context?.state === 'suspended') await this.context.resume();
+    await this.loading;
+    this.setPaused(false);
+  }
+
+  async _init() {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass({ latencyHint: 'interactive' });
+    this.context = context;
+
+    const compressor = context.createDynamicsCompressor();
+    compressor.threshold.value = -12;
+    compressor.knee.value = 16;
+    compressor.ratio.value = 5;
+    compressor.attack.value = 0.004;
+    compressor.release.value = 0.16;
+
+    this.master = context.createGain();
+    this.master.gain.value = 0.72;
+    this.master.connect(compressor).connect(context.destination);
+
+    const engineBus = context.createGain();
+    const engineTone = context.createBiquadFilter();
+    engineTone.type = 'lowpass';
+    engineTone.frequency.value = 7200;
+    engineTone.Q.value = 0.35;
+    engineBus.connect(engineTone).connect(this.master);
+    this.engineTone = engineTone;
+
+    const buffers = await Promise.all(ENGINE_FILES.map(async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Audio load failed: ${url}`);
+      return context.decodeAudioData(await response.arrayBuffer());
+    }));
+
+    buffers.forEach((buffer) => {
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      source.buffer = buffer;
+      source.loop = true;
+      gain.gain.value = 0;
+      source.connect(gain).connect(engineBus);
+      source.start();
+      this.engineSources.push(source);
+      this.engineGains.push(gain);
+    });
+
+    this.noiseBuffer = this._makeNoiseBuffer(2);
+    this.roadGain = this._makeNoiseLoop('bandpass', 720, 0.75);
+    this.nitroGain = this._makeNoiseLoop('highpass', 1450, 0.55);
+    this.ready = true;
+    this.ui(520);
+  }
+
+  _makeNoiseBuffer(seconds) {
+    const length = Math.round(this.context.sampleRate * seconds);
+    const buffer = this.context.createBuffer(1, length, this.context.sampleRate);
+    const samples = buffer.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < length; i++) {
+      const white = Math.random() * 2 - 1;
+      last = last * 0.82 + white * 0.18;
+      samples[i] = last;
+    }
+    return buffer;
+  }
+
+  _makeNoiseLoop(type, frequency, q) {
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    source.buffer = this.noiseBuffer;
+    source.loop = true;
+    filter.type = type;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
+    gain.gain.value = 0;
+    source.connect(filter).connect(gain).connect(this.master);
+    source.start();
+    return gain;
+  }
+
+  update(car, playing, inTunnel = false) {
+    if (!this.ready) return;
+    const now = this.context.currentTime;
+    const rpm = clamp(car.speed / 88);
+    const active = playing && !this.paused ? 1 : 0;
+    const throttleLift = car.nitroActive ? 1.13 : 1;
+
+    const low = clamp(1 - rpm / 0.5);
+    const mid = clamp(1 - Math.abs(rpm - 0.48) / 0.46);
+    const high = clamp((rpm - 0.38) / 0.62);
+    const weights = [low, mid, high];
+    const rates = [0.82 + rpm * 0.28, 0.92 + rpm * 0.24, 0.98 + rpm * 0.2];
+    for (let i = 0; i < 3; i++) {
+      this.engineGains[i].gain.setTargetAtTime(weights[i] * active * 0.34 * throttleLift, now, 0.045);
+      this.engineSources[i].playbackRate.setTargetAtTime(rates[i], now, 0.055);
+    }
+
+    this.roadGain.gain.setTargetAtTime(active * rpm * rpm * 0.16, now, 0.08);
+    this.nitroGain.gain.setTargetAtTime(active * (car.nitroActive ? 0.24 : 0), now, 0.035);
+    this.engineTone.frequency.setTargetAtTime(inTunnel ? 3900 : 7200, now, 0.12);
+    this.master.gain.setTargetAtTime(this.muted ? 0 : (inTunnel ? 0.82 : 0.72), now, 0.08);
+    this.lastKmh = car.kmh;
+  }
+
+  crash() {
+    if (!this.ready || this.muted) return;
+    const now = this.context.currentTime;
+    const noise = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    noise.buffer = this.noiseBuffer;
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1800, now);
+    filter.frequency.exponentialRampToValueAtTime(120, now + 0.32);
+    gain.gain.setValueAtTime(0.72, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+    noise.connect(filter).connect(gain).connect(this.master);
+    noise.start(now);
+    noise.stop(now + 0.36);
+
+    const thud = this.context.createOscillator();
+    const thudGain = this.context.createGain();
+    thud.type = 'triangle';
+    thud.frequency.setValueAtTime(105, now);
+    thud.frequency.exponentialRampToValueAtTime(38, now + 0.22);
+    thudGain.gain.setValueAtTime(0.42, now);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+    thud.connect(thudGain).connect(this.master);
+    thud.start(now);
+    thud.stop(now + 0.25);
+  }
+
+  nearMiss() {
+    if (!this.ready || this.muted) return;
+    const now = this.context.currentTime;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    source.buffer = this.noiseBuffer;
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1600, now);
+    filter.frequency.exponentialRampToValueAtTime(420, now + 0.22);
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+    source.connect(filter).connect(gain).connect(this.master);
+    source.start(now);
+    source.stop(now + 0.25);
+  }
+
+  ui(frequency = 650) {
+    if (!this.ready || this.muted) return;
+    const now = this.context.currentTime;
+    const oscillator = this.context.createOscillator();
+    const gain = this.context.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(frequency, now);
+    oscillator.frequency.exponentialRampToValueAtTime(frequency * 1.3, now + 0.07);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+    oscillator.connect(gain).connect(this.master);
+    oscillator.start(now);
+    oscillator.stop(now + 0.1);
+  }
+
+  setPaused(paused) {
+    this.paused = paused;
+    if (!this.ready) return;
+    const now = this.context.currentTime;
+    this.engineGains.forEach((gain) => gain.gain.setTargetAtTime(0, now, 0.035));
+    this.roadGain.gain.setTargetAtTime(0, now, 0.035);
+    this.nitroGain.gain.setTargetAtTime(0, now, 0.035);
+  }
+
+  toggleMute() {
+    this.muted = !this.muted;
+    if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.72, this.context.currentTime, 0.03);
+    if (this.muteButton) {
+      this.muteButton.textContent = this.muted ? '🔇' : '🔊';
+      this.muteButton.setAttribute('aria-label', this.muted ? 'Unmute game audio' : 'Mute game audio');
+    }
+  }
+}

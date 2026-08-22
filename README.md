@@ -12,6 +12,7 @@ A fast, browser-based 3D highway driving game built with Three.js. Race through 
 - PBR asphalt and terrain materials, HDR environment lighting, alpine panorama, shadows, fog, bloom, and cinematic color grading
 - Detailed player car with working brake lights, rotating tires, nitro effects, and contact shadow
 - Traffic, near-miss scoring, three-life collision system, speedometer, nitro bar, and FPS counter
+- Reactive three-band engine audio, road/wind noise, nitro, impacts, and UI sounds
 - Instanced small vegetation and distance-aware scenery for better browser performance
 
 ## Run locally
@@ -39,6 +40,7 @@ npm run preview
 | Steer | `A` / `D` or `Left` / `Right Arrow` |
 | Nitro | `Shift` |
 | Pause / resume | `P` or `Escape` |
+| Mute / unmute | `M` |
 | Restart after game over | `R` |
 
 On Android and other touch devices, use the on-screen steering, brake, gas,
@@ -99,6 +101,7 @@ The project uses CC0 environment assets from [Poly Haven](https://polyhaven.com/
 
 - [`public/assets/realistic/SOURCES.md`](public/assets/realistic/SOURCES.md)
 - [`public/assets/terrain/SOURCES.md`](public/assets/terrain/SOURCES.md)
+- [`public/assets/audio/SOURCES.md`](public/assets/audio/SOURCES.md)
 
 The Ferrari model and any separately supplied vehicle assets remain subject to their original licenses; verify their redistribution terms before commercial use.
 

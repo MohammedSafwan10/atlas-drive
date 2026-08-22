@@ -133,6 +133,13 @@
       font-size: 15px; font-weight: 800; pointer-events: auto;
       cursor: pointer; display: none;
     }
+    #sound-btn {
+      position: absolute; top: 18px; left: calc(50% + 136px);
+      width: 38px; height: 38px; border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.24);
+      background: rgba(10,14,20,0.66); color: #fff;
+      font-size: 17px; pointer-events: auto; cursor: pointer;
+    }
 
     /* Move HUD widgets out of the way of touch buttons */
     body.touch .nitro-wrap { bottom: 118px; left: 18px; width: 180px; }
@@ -183,6 +190,10 @@
     body.touch #pause-btn {
       top: max(10px, env(safe-area-inset-top)); left: calc(50% + 72px);
       width: 34px; height: 34px; border-radius: 9px; font-size: 13px;
+    }
+    body.touch #sound-btn {
+      top: max(10px, env(safe-area-inset-top)); left: calc(50% + 112px);
+      width: 34px; height: 34px; border-radius: 9px; font-size: 14px;
     }
     body.touch .nitro-wrap {
       bottom: max(76px, calc(env(safe-area-inset-bottom) + 70px));
@@ -242,6 +253,7 @@
     </div>
 
     <button id="pause-btn" aria-label="Pause game">Ⅱ</button>
+    <button id="sound-btn" aria-label="Mute game audio">🔊</button>
 
     <div id="start-screen" class="overlay">
       <h1>TURBO HIGHWAY 3D</h1>
