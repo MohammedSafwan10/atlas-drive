@@ -1,6 +1,6 @@
 # Atlas Drive
 
-A cinematic browser and Android racing game built with Three.js. Race tactical rivals across the 6 km Alpine Pass or dodge traffic in Endless Highway while dynamic time, storms, wet roads, nitro and a detailed PBR environment transform every run.
+A cinematic browser racing game built with Three.js. Race tactical rivals across the 6 km Alpine Pass or dodge traffic in Endless Highway while dynamic time, storms, wet roads, nitro and a detailed PBR environment transform every run.
 
 ![Atlas Drive gameplay](docs/gameplay.png)
 
@@ -59,8 +59,9 @@ npm run preview
 | Mute / unmute | `M` |
 | Restart after game over | `R` |
 
-On Android and other touch devices, use the on-screen steering, brake, gas,
-nitro, and pause controls. Tilt steering can be enabled from the top control.
+When the website is opened on a touch device, use the responsive on-screen
+steering, brake, gas, nitro and pause controls. Tilt steering can be enabled
+from the top control.
 
 ## Project structure
 
@@ -79,35 +80,6 @@ src/
   hud.js          Score, lives, speed, nitro, and FPS interface
 public/assets/     Runtime models, textures, panorama, and Draco decoder
 ```
-
-## Android
-
-The project includes a Capacitor Android wrapper with landscape orientation,
-immersive fullscreen, touch/tilt controls, and an adaptive mobile graphics
-profile. Requirements are Android Studio, Android SDK 36, and Java 21.
-
-Build and sync the web game into Android:
-
-```bash
-npm run android:sync
-```
-
-Run it on a connected phone or emulator:
-
-```bash
-npm run android:run
-```
-
-Create a locally signed debug APK on Windows:
-
-```bash
-npm run android:apk
-```
-
-The APK is written to
-`android/app/build/outputs/apk/debug/app-debug.apk`. Use `npm run android:open`
-to open the native project in Android Studio for release signing and Play Store
-bundle generation.
 
 ## Performance notes
 
