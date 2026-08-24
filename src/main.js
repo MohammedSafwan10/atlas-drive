@@ -15,8 +15,10 @@ import { RaceCourse, RACE_CHECKPOINTS, RACE_DISTANCE } from './race.js';
 import { TimeOfDay, TIME_MODES } from './timeOfDay.js';
 import { WeatherSystem, WEATHER_MODES } from './weather.js';
 import { FinishPresentation } from './finish.js';
+import { LoadingGate } from './loading.js';
 
 const canvas = document.getElementById('game');
+const loadingGate = new LoadingGate();
 const { renderer, scene, camera, update: updateScene, updatePerformance, setTimeOfDay, setWeatherIntensity } = createScene(canvas);
 
 const road = new Road(scene);
@@ -37,7 +39,7 @@ const previewZ = import.meta.env.DEV
   : Number.NaN;
 const previewBoost = import.meta.env.DEV && previewParams.has('previewBoost');
 
-let state = 'start'; // start | countdown | playing | paused | crashed | finishCinematic | finished
+let state = 'loading'; // loading | start | countdown | playing | paused | crashed | finishCinematic | finished
 let stateBeforePause = 'playing';
 let gameMode = 'race'; // race | endless
 let raceDifficulty = 'normal';
@@ -463,7 +465,6 @@ function tick() {
   renderer.render(scene, camera);
 }
 
-hud.showStart();
 hud.setMode('endless');
 try {
   selectDifficulty(localStorage.getItem('turbo-race-difficulty') || 'normal');
@@ -482,3 +483,15 @@ try {
 }
 if (import.meta.env.DEV && previewParams.has('previewLightning')) weather.forceLightning();
 tick();
+
+loadingGate.reveal(renderer, scene, camera).then(() => {
+  state = 'start';
+  clock.getDelta();
+  hud.showStart();
+}).catch((error) => {
+  // Never strand the player behind a loader if GPU warm-up fails unexpectedly.
+  console.error('Startup warm-up failed', error);
+  document.getElementById('loading-screen')?.remove();
+  state = 'start';
+  hud.showStart();
+});
