@@ -1,12 +1,13 @@
 # Turbo Highway 3D
 
-A fast, browser-based 3D highway driving game built with Three.js. Race through a curved and elevated alpine road, dodge traffic, use nitro, and chase a high score in a detailed PBR environment.
+A fast, browser-based 3D highway driving game built with Three.js. Compete in a four-car alpine sprint or dodge traffic in endless mode, use nitro, and chase a high score in a detailed PBR environment.
 
 ![Turbo Highway 3D gameplay](docs/gameplay.png)
 
 ## Highlights
 
 - Curved, gently elevated endless highway with road-aligned traffic and chase camera
+- Four-car 2 km sprint with countdown, race AI, checkpoints, live position, sampled-road minimap, finish gantry, and results
 - Uneven 3D terrain with gravel shoulders, drainage ditches, guardrails, fences, reflectors, signs, and utility poles
 - Three distinct tree species plus rocks, ferns, bushes, grass, and wildflowers
 - PBR asphalt and terrain materials, HDR environment lighting, alpine panorama, shadows, fog, bloom, and cinematic color grading

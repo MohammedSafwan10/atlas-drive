@@ -7,11 +7,11 @@ import { Traffic } from './traffic.js';
 import { Effects } from './effects.js';
 import { HUD } from './hud.js';
 import { Input } from './input.js';
-import { roadPoint } from './path.js';
+import { roadPoint, SEG_LEN } from './path.js';
 import { IS_MOBILE } from './platform.js';
 import { GameAudio } from './audio.js';
 import { modeForSegment } from './features.js';
-import { SEG_LEN } from './path.js';
+import { RaceCourse, RACE_CHECKPOINTS, RACE_DISTANCE } from './race.js';
 
 const canvas = document.getElementById('game');
 const { renderer, scene, camera, update: updateScene, updatePerformance } = createScene(canvas);
@@ -20,6 +20,7 @@ const road = new Road(scene);
 const environment = new Environment(scene);
 const car = new Car(scene);
 const traffic = new Traffic(scene);
+const raceCourse = new RaceCourse(scene);
 const effects = new Effects(scene, camera, car);
 const hud = new HUD();
 const input = new Input();
@@ -30,17 +31,24 @@ const previewZ = import.meta.env.DEV
   : Number.NaN;
 const previewBoost = import.meta.env.DEV && previewParams.has('previewBoost');
 
-let state = 'start'; // start | playing | paused | crashed
+let state = 'start'; // start | countdown | playing | paused | crashed | finished
+let stateBeforePause = 'playing';
+let gameMode = 'race'; // race | endless
 let score = 0;
 let lives = 3;
 const MAX_LIVES = 3;
 let invulnerable = 0; // seconds of blink after a hit
 let impactShake = 0;
+let raceCountdown = 0;
+let countdownStage = 0;
+let raceTime = 0;
+let raceTopSpeed = 0;
+let playerCheckpoint = 0;
 let camPos = new THREE.Vector3(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
 let camLook = new THREE.Vector3(0, 1, -10);
 let suspended = document.hidden;
 
-function startGame() {
+function resetCommon() {
   void audio.start().catch((error) => console.warn('Game audio unavailable', error));
   car.reset();
   if (Number.isFinite(previewZ)) {
@@ -52,7 +60,6 @@ function startGame() {
     input.touch.gas = true;
     input.touch.nitro = true;
   }
-  traffic.reset();
   road.reset(car.z);
   environment.reset(car.z);
   camPos.set(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
@@ -62,16 +69,64 @@ function startGame() {
   invulnerable = 0;
   impactShake = 0;
   hud.setLives(lives);
-  state = 'playing';
   hud.hideStart();
   hud.hideGameOver();
+  hud.hideRaceResults();
   hud.hidePause();
   hud.showPauseButton(true);
+  raceTime = 0;
+  raceTopSpeed = 0;
+  playerCheckpoint = 0;
+}
+
+function startEndless() {
+  gameMode = 'endless';
+  resetCommon();
+  traffic.reset();
+  raceCourse.setVisible(false);
+  hud.setMode('endless');
+  hud.showCountdown('');
+  state = 'playing';
   audio.ui(620);
 }
 
+function startRace() {
+  gameMode = 'race';
+  resetCommon();
+  car.x = 0;
+  car.syncToRoad();
+  traffic.resetRace();
+  raceCourse.setVisible(true);
+  hud.setMode('race');
+  raceCountdown = 3.25;
+  countdownStage = 4;
+  state = 'countdown';
+  input.clearAll();
+  hud.showCountdown('3');
+  audio.ui(440);
+}
+
+function restartGame() {
+  if (gameMode === 'race') startRace();
+  else startEndless();
+}
+
+function showMenu() {
+  state = 'start';
+  input.clearAll();
+  car.speed = 0;
+  traffic.reset();
+  raceCourse.setVisible(false);
+  hud.setMode('endless');
+  hud.hidePause();
+  hud.hideRaceResults();
+  hud.showStart();
+  audio.setPaused(true);
+}
+
 function pauseGame() {
-  if (state !== 'playing') return;
+  if (state !== 'playing' && state !== 'countdown') return;
+  stateBeforePause = state;
   state = 'paused';
   input.clearAll();
   audio.setPaused(true);
@@ -81,7 +136,7 @@ function pauseGame() {
 
 function resumeGame() {
   if (state !== 'paused') return;
-  state = 'playing';
+  state = stateBeforePause;
   input.clearAll();
   audio.setPaused(false);
   audio.ui(680);
@@ -91,7 +146,7 @@ function resumeGame() {
 }
 
 function hit() {
-  if (state !== 'playing' || invulnerable > 0) return;
+  if (gameMode !== 'endless' || state !== 'playing' || invulnerable > 0) return;
   lives -= 1;
   // Give impact immediate physical feedback and let the traffic pull away.
   // Keeping the player model visible avoids the old two-second "glitch" blink.
@@ -111,11 +166,40 @@ function hit() {
   }
 }
 
-hud.bind(startGame, startGame, pauseGame, resumeGame);
+function raceCollision(rival) {
+  if (state !== 'playing') return;
+  car.speed *= 0.72;
+  car.x += car.x <= rival.x ? -0.42 : 0.42;
+  impactShake = 0.2;
+  audio.crash();
+  hud.crashFlash();
+  if (navigator.vibrate) navigator.vibrate(55);
+}
+
+function finishRace() {
+  if (state === 'finished') return;
+  const standings = traffic.getRaceStandings(car.z);
+  const position = standings.findIndex((entry) => entry.player) + 1;
+  state = 'finished';
+  car.nitroActive = false;
+  input.clearAll();
+  hud.showCountdown('');
+  hud.showRaceResults(position, raceTime, raceTopSpeed);
+  audio.ui(position === 1 ? 980 : 720);
+}
+
+hud.bind({
+  startEndless,
+  startRace,
+  restart: restartGame,
+  pause: pauseGame,
+  resume: resumeGame,
+  menu: showMenu,
+});
 addEventListener('keydown', (e) => {
-  if (e.code === 'KeyR' && state === 'crashed') startGame();
-  if (e.code === 'Enter' && state === 'start') startGame();
-  if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'playing') pauseGame();
+  if (e.code === 'KeyR' && (state === 'crashed' || state === 'finished')) restartGame();
+  if (e.code === 'Enter' && state === 'start') startRace();
+  if ((e.code === 'Escape' || e.code === 'KeyP') && (state === 'playing' || state === 'countdown')) pauseGame();
   else if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'paused') resumeGame();
   if (e.code === 'KeyM') audio.toggleMute();
 });
@@ -125,7 +209,7 @@ const clock = new THREE.Clock();
 document.addEventListener('visibilitychange', () => {
   suspended = document.hidden;
   input.clearAll();
-  if (suspended && state === 'playing') pauseGame();
+  if (suspended && (state === 'playing' || state === 'countdown')) pauseGame();
   if (!suspended) clock.getDelta();
 });
 
@@ -136,6 +220,31 @@ function tick() {
 
   if (suspended) return;
   updatePerformance(frameTime);
+
+  if (state === 'countdown') {
+    raceCountdown -= dt;
+    const stage = Math.max(0, Math.ceil(raceCountdown));
+    if (stage !== countdownStage) {
+      countdownStage = stage;
+      if (stage > 0) {
+        hud.showCountdown(String(stage));
+        audio.ui(440 + (3 - stage) * 70);
+      } else {
+        hud.showCountdown('GO!');
+        audio.ui(880);
+        state = 'playing';
+        if (previewBoost) {
+          car.speed = 58;
+          input.touch.gas = true;
+          input.touch.nitro = true;
+        }
+        setTimeout(() => {
+          if (state === 'playing') hud.showCountdown('');
+        }, 650);
+      }
+    }
+    traffic.updateRace(dt, car, false, raceCollision);
+  }
 
   if (state === 'playing') {
     if (invulnerable > 0) {
@@ -157,16 +266,32 @@ function tick() {
       car.justLanded = false;
     }
 
-    // Score: distance + speed bonus
-    score += car.speed * dt * (1 + car.speed / 60);
+    if (gameMode === 'endless') {
+      // Score: distance + speed bonus
+      score += car.speed * dt * (1 + car.speed / 60);
+      traffic.update(dt, car.z, car.x, () => {
+        score += 50;
+        hud.showNearMiss();
+        audio.nearMiss();
+      }, () => {
+        if (!car.airborne) hit(); // flying over traffic is safe
+      });
+    } else {
+      raceTime += dt;
+      raceTopSpeed = Math.max(raceTopSpeed, car.kmh);
+      traffic.updateRace(dt, car, true, raceCollision);
+      const progress = Math.max(0, -car.z);
+      while (playerCheckpoint < RACE_CHECKPOINTS.length - 1 && progress >= RACE_CHECKPOINTS[playerCheckpoint]) {
+        playerCheckpoint += 1;
+        hud.showNearMiss(`CHECKPOINT ${playerCheckpoint} / 3`);
+        audio.ui(700 + playerCheckpoint * 70);
+      }
+      if (progress >= RACE_DISTANCE) finishRace();
+    }
+  }
 
-    traffic.update(dt, car.z, car.x, () => {
-      score += 50;
-      hud.showNearMiss();
-      audio.nearMiss();
-    }, () => {
-      if (!car.airborne) hit(); // flying over traffic is safe
-    });
+  if (state === 'finished') {
+    car.speed *= Math.exp(-dt * 1.6);
   }
 
   // Freeze simulation/effects while paused; the last frame remains rendered.
@@ -203,10 +328,29 @@ function tick() {
   }
 
   hud.update(car, score);
+  if (gameMode === 'race') {
+    const standings = traffic.getRaceStandings(car.z);
+    const position = standings.findIndex((entry) => entry.player) + 1;
+    hud.updateRace({
+      position,
+      progress: Math.max(0, -car.z),
+      time: raceTime,
+      standings,
+      playerX: car.x,
+    });
+  }
   hud.updateFps(frameTime);
-  audio.update(car, state === 'playing', modeForSegment(Math.round(car.z / SEG_LEN)) === 'tunnel');
+  audio.update(
+    car,
+    state === 'playing' || state === 'countdown',
+    modeForSegment(Math.round(car.z / SEG_LEN)) === 'tunnel',
+    gameMode === 'race'
+      ? traffic.cars.slice(0, 3).map((rival) => ({ x: rival.x, z: rival.z, speed: rival.speed }))
+      : [],
+  );
   renderer.render(scene, camera);
 }
 
 hud.showStart();
+hud.setMode('endless');
 tick();

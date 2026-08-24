@@ -88,6 +88,44 @@
     .btn:hover { transform: scale(1.05); }
     .hidden { display: none !important; }
 
+    .mode-buttons { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+    .mode-card {
+      pointer-events: auto; cursor: pointer; width: 230px; min-height: 92px;
+      padding: 14px 18px; border-radius: 12px; text-align: left;
+      color: #fff; background: linear-gradient(145deg, rgba(22,34,48,0.94), rgba(8,13,21,0.94));
+      border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 10px 30px rgba(0,0,0,0.28);
+    }
+    .mode-card.primary { border-color: rgba(34,184,255,0.75); box-shadow: 0 8px 30px rgba(20,155,235,0.25); }
+    .mode-card strong { display: block; font-size: 17px; letter-spacing: 1px; }
+    .mode-card span { display: block; color: #9fb4c8; font-size: 12px; margin-top: 5px; line-height: 1.35; }
+
+    #race-hud {
+      display: none; position: absolute; top: 18px; left: 22px; min-width: 148px;
+      padding: 10px 14px; border-radius: 10px; background: rgba(8,13,20,0.72);
+      border: 1px solid rgba(70,190,255,0.32);
+    }
+    #race-position { font-size: 34px; line-height: 1; font-weight: 900; }
+    #race-position small { font-size: 14px; color: #9fb4c8; }
+    #race-progress-text { margin-top: 7px; font-size: 12px; color: #c4d6e6; }
+    #race-progress-track { height: 5px; margin-top: 5px; background: rgba(255,255,255,0.13); border-radius: 5px; overflow: hidden; }
+    #race-progress-fill { width: 0; height: 100%; background: linear-gradient(90deg,#168cff,#35d3ff); }
+    #race-time { margin-top: 6px; font-size: 13px; font-variant-numeric: tabular-nums; color: #ffe39a; }
+
+    #minimap-wrap {
+      display: none; position: absolute; top: 92px; right: 22px; width: 170px;
+      padding: 8px; border-radius: 12px; background: rgba(6,10,16,0.72);
+      border: 1px solid rgba(255,255,255,0.14);
+    }
+    #minimap { width: 100%; height: 120px; display: block; }
+    #countdown {
+      display: none; position: absolute; inset: 0; align-items: center; justify-content: center;
+      font-size: clamp(82px, 16vw, 190px); font-weight: 950; font-style: italic;
+      color: #fff; text-shadow: 0 0 18px rgba(25,170,255,0.9), 0 8px 30px rgba(0,0,0,0.65);
+      letter-spacing: 6px;
+    }
+    #race-result-position { font-size: 72px; font-weight: 950; color: #ffd047; line-height: 1; }
+    #race-result-stats { color: #b9cad9; line-height: 1.8; font-size: 15px; }
+
     /* Touch controls (shown only on touch devices) */
     #touch-controls { display: none; }
     body.touch #touch-controls {
@@ -210,17 +248,43 @@
     body.touch .overlay h1 { font-size: clamp(26px, 8vw, 42px); }
     body.touch .overlay p { font-size: 12px; line-height: 1.45; }
     body.touch .btn { padding: 9px 24px; font-size: 14px; }
+    body.touch .mode-buttons { gap: 8px; }
+    body.touch .mode-card { width: 190px; min-height: 70px; padding: 9px 12px; }
+    body.touch .mode-card strong { font-size: 13px; }
+    body.touch .mode-card span { font-size: 9px; }
+    body.touch #race-hud {
+      top: max(8px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left));
+      min-width: 105px; padding: 6px 9px; border-radius: 8px;
+    }
+    body.touch #race-position { font-size: 23px; }
+    body.touch #race-position small { font-size: 9px; }
+    body.touch #race-progress-text, body.touch #race-time { font-size: 9px; margin-top: 3px; }
+    body.touch #minimap-wrap {
+      top: 58px; right: max(10px, env(safe-area-inset-right)); width: 120px; padding: 5px;
+    }
+    body.touch #minimap { height: 78px; }
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
 
   <div id="hud">
-    <div class="hud-top-left">
+    <div id="endless-hud" class="hud-top-left">
       <div class="hud-label">Score</div>
       <div id="score">0</div>
       <div id="lives">❤❤❤</div>
     </div>
+
+    <div id="race-hud">
+      <div class="hud-label">Race Position</div>
+      <div id="race-position">4th <small>/ 4</small></div>
+      <div id="race-progress-text">0.00 / 2.00 km</div>
+      <div id="race-progress-track"><div id="race-progress-fill"></div></div>
+      <div id="race-time">00:00.000</div>
+    </div>
+
+    <div id="minimap-wrap"><canvas id="minimap" width="320" height="220"></canvas></div>
+    <div id="countdown">3</div>
 
     <div class="hud-top-right">
       <div class="hud-label">Performance</div>
@@ -261,10 +325,19 @@
         <span class="key">W</span>/<span class="key">↑</span> accelerate &nbsp;·&nbsp;
         <span class="key">S</span>/<span class="key">↓</span> brake &nbsp;·&nbsp;
         <span class="key">A</span><span class="key">D</span>/<span class="key">←</span><span class="key">→</span> steer<br/>
-        <span class="key">Shift</span> nitro &nbsp;·&nbsp; 3 lives — dodge traffic, chain near-misses for bonus score<br/>
+        <span class="key">Shift</span> nitro &nbsp;·&nbsp; <span class="key">P</span> pause &nbsp;·&nbsp; <span class="key">M</span> mute<br/>
         <em style="font-size:13px;color:#8fa3b8;">On touch devices: on-screen pedals + arrows, or enable TILT STEER</em>
       </p>
-      <button id="start-btn" class="btn">START ENGINE</button>
+      <div class="mode-buttons">
+        <button id="start-race-btn" class="mode-card primary">
+          <strong>4-CAR SPRINT</strong>
+          <span>2 km race · 3 rivals · minimap · checkpoints</span>
+        </button>
+        <button id="start-endless-btn" class="mode-card">
+          <strong>ENDLESS HIGHWAY</strong>
+          <span>Traffic dodging · 3 lives · score attack</span>
+        </button>
+      </div>
     </div>
 
     <div id="gameover-screen" class="overlay">
@@ -279,6 +352,16 @@
       <p>Take a breath. Your run is frozen.</p>
       <button id="resume-btn" class="btn">RESUME</button>
       <button id="pause-restart-btn" class="btn">RESTART</button>
+    </div>
+
+    <div id="race-results-screen" class="overlay" style="display:none">
+      <h1>RACE COMPLETE</h1>
+      <div id="race-result-position">1st</div>
+      <div id="race-result-stats">Time 00:00.000<br/>Top speed 0 km/h</div>
+      <div class="mode-buttons">
+        <button id="race-again-btn" class="btn">RACE AGAIN</button>
+        <button id="results-menu-btn" class="btn">MAIN MENU</button>
+      </div>
     </div>
   </div>
 

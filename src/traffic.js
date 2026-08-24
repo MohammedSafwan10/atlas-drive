@@ -4,9 +4,11 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { LANE_X } from './road.js';
 import { roadPitch, roadPoint, roadYaw } from './path.js';
 import { GRAPHICS } from './platform.js';
+import { rampSurfaceLift } from './features.js';
+import { RACE_DISTANCE, RACER_NAMES } from './race.js';
 
 // AI traffic: pooled vehicles (real Ferrari GLB clones with varied paint) in lanes at varied speeds
-const COLORS = [0x3a6ea5, 0x777777, 0x8a2f2f, 0x2f5e3a, 0x3f3f46, 0xb8b8b8, 0x8a7a2f, 0x2f2f38];
+export const COLORS = [0x2878d4, 0x20a15a, 0xe0a126, 0x777777, 0x8a2f2f, 0x3f3f46, 0xb8b8b8, 0x292f52];
 
 export class Traffic {
   constructor(scene) {
@@ -58,12 +60,14 @@ export class Traffic {
       g.visible = false;
       this.group.add(g);
       this.cars.push({
-        mesh: g, lane: 0, z: 0, speed: 0,
+        mesh: g, lane: 0, targetLane: 0, x: 0, z: 0, speed: 0,
         halfW: 0.95, halfL: 2.2,
-        passed: false,
+        passed: false, laneTimer: 0, collisionCooldown: 0,
+        racerIndex: -1, finished: false,
       });
     }
     this.spawnTimer = 0;
+    this.raceMode = false;
 
     // ---- Upgrade pool to real GLB models once loaded ----
     const draco = new DRACOLoader();
@@ -112,6 +116,7 @@ export class Traffic {
   }
 
   update(dt, playerZ, playerX, onNearMiss, onCrash) {
+    if (this.raceMode) return;
     // Maintain traffic density
     this.spawnTimer -= dt;
     let active = 0;
@@ -150,8 +155,109 @@ export class Traffic {
   }
 
   reset() {
+    this.raceMode = false;
     for (const car of this.cars) {
       car.mesh.visible = false;
+      car.racerIndex = -1;
     }
+  }
+
+  resetRace() {
+    this.raceMode = true;
+    const grid = [
+      { lane: 0, z: -2.2, speed: 0 },
+      { lane: 2, z: -2.2, speed: 0 },
+      { lane: 1, z: -8.4, speed: 0 },
+    ];
+    for (let i = 0; i < this.cars.length; i++) {
+      const car = this.cars[i];
+      if (i >= 3) {
+        car.mesh.visible = false;
+        car.racerIndex = -1;
+        continue;
+      }
+      const slot = grid[i];
+      car.racerIndex = i;
+      car.lane = slot.lane;
+      car.targetLane = slot.lane;
+      car.x = LANE_X[slot.lane];
+      car.z = slot.z;
+      car.speed = slot.speed;
+      car.finished = false;
+      car.laneTimer = 0.8 + i * 0.45;
+      car.collisionCooldown = 0;
+      car.mesh.visible = true;
+      roadPoint(car.z, car.x, rampSurfaceLift(car.z), car.mesh.position);
+      car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
+    }
+  }
+
+  updateRace(dt, player, running, onCrash) {
+    if (!this.raceMode) return;
+    const playerProgress = Math.max(0, -player.z);
+    for (let i = 0; i < 3; i++) {
+      const car = this.cars[i];
+      if (!car?.mesh.visible) continue;
+      car.collisionCooldown = Math.max(0, car.collisionCooldown - dt);
+
+      if (running) {
+        const racerProgress = Math.max(0, -car.z);
+        const baseSpeed = [53, 50.5, 51.8][i];
+        const rubberBand = Math.max(-7, Math.min(10, (playerProgress - racerProgress) * 0.038));
+        const finishEase = racerProgress > RACE_DISTANCE ? 0.82 : 1;
+        const targetSpeed = (baseSpeed + rubberBand) * finishEase;
+        car.speed += Math.max(-8 * dt, Math.min(6.5 * dt, targetSpeed - car.speed));
+
+        car.laneTimer -= dt;
+        if (car.laneTimer <= 0) {
+          car.laneTimer = 1.25 + ((i * 0.73 + racerProgress * 0.01) % 1.1);
+          let blocked = false;
+          for (let j = 0; j < 3; j++) {
+            if (j === i) continue;
+            const other = this.cars[j];
+            if (other.targetLane === car.targetLane && other.z < car.z && car.z - other.z < 17) blocked = true;
+          }
+          if (blocked) {
+            const choices = [0, 1, 2].filter((lane) => lane !== car.targetLane);
+            car.targetLane = choices[(i + Math.floor(racerProgress / 90)) % choices.length];
+          } else if (Math.floor(racerProgress / 180 + i) % 3 === 0) {
+            car.targetLane = (car.targetLane + (i % 2 ? 1 : 2)) % 3;
+          }
+        }
+
+        car.x += (LANE_X[car.targetLane] - car.x) * Math.min(1, dt * 1.45);
+        car.z -= car.speed * dt;
+        if (-car.z >= RACE_DISTANCE) car.finished = true;
+      }
+
+      roadPoint(car.z, car.x, rampSurfaceLift(car.z), car.mesh.position);
+      car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
+
+      const dx = Math.abs(car.x - player.x);
+      const dz = Math.abs(car.z - player.z);
+      if (running && car.collisionCooldown <= 0 && dx < car.halfW + 0.92 && dz < car.halfL + 2.15) {
+        car.collisionCooldown = 0.85;
+        car.speed *= 0.82;
+        onCrash(car);
+      }
+    }
+  }
+
+  getRaceStandings(playerZ) {
+    const entries = [{ name: RACER_NAMES[0], progress: Math.max(0, -playerZ), player: true }];
+    for (let i = 0; i < 3; i++) {
+      const car = this.cars[i];
+      entries.push({
+        name: RACER_NAMES[i + 1],
+        progress: Math.max(0, -car.z),
+        player: false,
+        x: car.x,
+        z: car.z,
+        speed: car.speed,
+        color: COLORS[i],
+      });
+    }
+    entries.sort((a, b) => b.progress - a.progress);
+    return entries;
   }
 }

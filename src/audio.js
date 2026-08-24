@@ -20,6 +20,8 @@ export class GameAudio {
     this.master = null;
     this.roadGain = null;
     this.nitroGain = null;
+    this.rivalGain = null;
+    this.rivalSource = null;
     this.lastKmh = 0;
     this.muteButton = document.getElementById('sound-btn');
     this.muteButton?.addEventListener('click', () => this.toggleMute());
@@ -75,6 +77,18 @@ export class GameAudio {
       this.engineGains.push(gain);
     });
 
+    // One spatial rival layer represents the nearest opponent. Reusing the
+    // mid-RPM buffer avoids three more always-running sources while still
+    // providing useful proximity and overtaking feedback.
+    this.rivalSource = context.createBufferSource();
+    this.rivalGain = context.createGain();
+    this.rivalPan = context.createStereoPanner();
+    this.rivalSource.buffer = buffers[1];
+    this.rivalSource.loop = true;
+    this.rivalGain.gain.value = 0;
+    this.rivalSource.connect(this.rivalGain).connect(this.rivalPan).connect(this.master);
+    this.rivalSource.start();
+
     this.noiseBuffer = this._makeNoiseBuffer(2);
     this.roadGain = this._makeNoiseLoop('bandpass', 720, 0.75);
     this.nitroGain = this._makeNoiseLoop('highpass', 1450, 0.55);
@@ -110,7 +124,7 @@ export class GameAudio {
     return gain;
   }
 
-  update(car, playing, inTunnel = false) {
+  update(car, playing, inTunnel = false, rivals = []) {
     if (!this.ready) return;
     const now = this.context.currentTime;
     const rpm = clamp(car.speed / 88);
@@ -129,6 +143,19 @@ export class GameAudio {
 
     this.roadGain.gain.setTargetAtTime(active * rpm * rpm * 0.16, now, 0.08);
     this.nitroGain.gain.setTargetAtTime(active * (car.nitroActive ? 0.24 : 0), now, 0.035);
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const rival of rivals) {
+      const distance = Math.abs(rival.z - car.z);
+      if (distance < nearestDistance) {
+        nearest = rival;
+        nearestDistance = distance;
+      }
+    }
+    const rivalPresence = nearest ? clamp(1 - nearestDistance / 65) : 0;
+    this.rivalGain.gain.setTargetAtTime(active * rivalPresence * 0.16, now, 0.07);
+    this.rivalPan.pan.setTargetAtTime(nearest ? clamp((nearest.x - car.x) / 7, -0.8, 0.8) : 0, now, 0.08);
+    this.rivalSource.playbackRate.setTargetAtTime(nearest ? 0.88 + clamp(nearest.speed / 70) * 0.28 : 0.9, now, 0.08);
     this.engineTone.frequency.setTargetAtTime(inTunnel ? 3900 : 7200, now, 0.12);
     this.master.gain.setTargetAtTime(this.muted ? 0 : (inTunnel ? 0.82 : 0.72), now, 0.08);
     this.lastKmh = car.kmh;
@@ -201,6 +228,7 @@ export class GameAudio {
     this.engineGains.forEach((gain) => gain.gain.setTargetAtTime(0, now, 0.035));
     this.roadGain.gain.setTargetAtTime(0, now, 0.035);
     this.nitroGain.gain.setTargetAtTime(0, now, 0.035);
+    this.rivalGain?.gain.setTargetAtTime(0, now, 0.035);
   }
 
   toggleMute() {

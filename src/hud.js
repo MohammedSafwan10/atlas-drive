@@ -1,3 +1,14 @@
+import { roadCenterX } from './path.js';
+import { RACE_CHECKPOINTS, RACE_DISTANCE } from './race.js';
+
+const ordinal = (position) => `${position}${position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th'}`;
+
+function formatTime(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.max(0, seconds - minutes * 60);
+  return `${String(minutes).padStart(2, '0')}:${remainder.toFixed(3).padStart(6, '0')}`;
+}
+
 // HUD updates and game state screens
 export class HUD {
   constructor() {
@@ -10,6 +21,19 @@ export class HUD {
     this.gameoverScreen = document.getElementById('gameover-screen');
     this.pauseScreen = document.getElementById('pause-screen');
     this.pauseButton = document.getElementById('pause-btn');
+    this.endlessHud = document.getElementById('endless-hud');
+    this.raceHud = document.getElementById('race-hud');
+    this.racePositionEl = document.getElementById('race-position');
+    this.raceProgressText = document.getElementById('race-progress-text');
+    this.raceProgressFill = document.getElementById('race-progress-fill');
+    this.raceTimeEl = document.getElementById('race-time');
+    this.minimapWrap = document.getElementById('minimap-wrap');
+    this.minimap = document.getElementById('minimap');
+    this.minimapContext = this.minimap.getContext('2d');
+    this.countdownEl = document.getElementById('countdown');
+    this.raceResultsScreen = document.getElementById('race-results-screen');
+    this.raceResultPosition = document.getElementById('race-result-position');
+    this.raceResultStats = document.getElementById('race-result-stats');
     this.finalScoreEl = document.getElementById('final-score');
     this.livesEl = document.getElementById('lives');
     this.fpsEl = document.getElementById('fps');
@@ -18,16 +42,18 @@ export class HUD {
     this.fpsFrames = 0;
     this.fpsElapsed = 0;
     this.displayFps = 60;
+    this._buildMinimapBase();
   }
 
-  bind(startFn, restartFn, pauseFn, resumeFn) {
-    this.onStart = startFn;
-    this.onRestart = restartFn;
-    document.getElementById('start-btn').addEventListener('click', startFn);
-    document.getElementById('restart-btn').addEventListener('click', restartFn);
-    document.getElementById('pause-restart-btn').addEventListener('click', restartFn);
-    this.pauseButton.addEventListener('click', pauseFn);
-    document.getElementById('resume-btn').addEventListener('click', resumeFn);
+  bind({ startEndless, startRace, restart, pause, resume, menu }) {
+    document.getElementById('start-endless-btn').addEventListener('click', startEndless);
+    document.getElementById('start-race-btn').addEventListener('click', startRace);
+    document.getElementById('restart-btn').addEventListener('click', restart);
+    document.getElementById('pause-restart-btn').addEventListener('click', restart);
+    document.getElementById('race-again-btn').addEventListener('click', startRace);
+    document.getElementById('results-menu-btn').addEventListener('click', menu);
+    this.pauseButton.addEventListener('click', pause);
+    document.getElementById('resume-btn').addEventListener('click', resume);
   }
 
   update(car, score) {
@@ -72,6 +98,9 @@ export class HUD {
   showStart() {
     this.startScreen.style.display = 'flex';
     this.gameoverScreen.style.display = 'none';
+    this.raceResultsScreen.style.display = 'none';
+    this.countdownEl.style.display = 'none';
+    this.showPauseButton(false);
   }
 
   hideStart() {
@@ -98,5 +127,109 @@ export class HUD {
 
   showPauseButton(show) {
     this.pauseButton.style.display = show ? 'block' : 'none';
+  }
+
+  setMode(mode) {
+    const race = mode === 'race';
+    this.endlessHud.style.display = race ? 'none' : 'block';
+    this.raceHud.style.display = race ? 'block' : 'none';
+    this.minimapWrap.style.display = race ? 'block' : 'none';
+  }
+
+  showCountdown(value) {
+    if (!value) {
+      this.countdownEl.style.display = 'none';
+      return;
+    }
+    this.countdownEl.textContent = value;
+    this.countdownEl.style.display = 'flex';
+    this.countdownEl.animate(
+      [{ transform: 'scale(1.35)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }],
+      { duration: 220, easing: 'cubic-bezier(.2,.9,.25,1)' },
+    );
+  }
+
+  updateRace({ position, progress, time, standings, playerX }) {
+    const ratio = Math.max(0, Math.min(1, progress / RACE_DISTANCE));
+    this.racePositionEl.innerHTML = `${ordinal(position)} <small>/ 4</small>`;
+    this.raceProgressText.textContent = `${(progress / 1000).toFixed(2)} / ${(RACE_DISTANCE / 1000).toFixed(2)} km`;
+    this.raceProgressFill.style.width = `${ratio * 100}%`;
+    this.raceTimeEl.textContent = formatTime(time);
+    this._drawMinimap(progress, standings, playerX);
+  }
+
+  showRaceResults(position, time, topSpeed) {
+    this.countdownEl.style.display = 'none';
+    this.showPauseButton(false);
+    this.raceResultPosition.textContent = ordinal(position);
+    this.raceResultStats.innerHTML = `Time ${formatTime(time)}<br/>Top speed ${Math.round(topSpeed)} km/h`;
+    this.raceResultsScreen.style.display = 'flex';
+  }
+
+  hideRaceResults() {
+    this.raceResultsScreen.style.display = 'none';
+  }
+
+  _mapPoint(progress, lateral = 0) {
+    const width = this.minimap.width;
+    const height = this.minimap.height;
+    const z = -Math.max(0, Math.min(RACE_DISTANCE, progress));
+    const curve = (roadCenterX(z) - roadCenterX(0)) * 2.6;
+    return {
+      x: width / 2 + curve + lateral * 2.2,
+      y: height - 18 - (progress / RACE_DISTANCE) * (height - 36),
+    };
+  }
+
+  _buildMinimapBase() {
+    this.minimapBase = document.createElement('canvas');
+    this.minimapBase.width = this.minimap.width;
+    this.minimapBase.height = this.minimap.height;
+    const ctx = this.minimapBase.getContext('2d');
+    ctx.fillStyle = '#07101a';
+    ctx.fillRect(0, 0, this.minimap.width, this.minimap.height);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i <= 90; i++) {
+      const point = this._mapPoint((i / 90) * RACE_DISTANCE);
+      if (i === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    }
+    ctx.strokeStyle = '#283746';
+    ctx.lineWidth = 13;
+    ctx.stroke();
+    ctx.strokeStyle = '#91a8bb';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    for (const checkpoint of RACE_CHECKPOINTS) {
+      const point = this._mapPoint(checkpoint);
+      ctx.fillStyle = checkpoint === RACE_DISTANCE ? '#ffd34e' : '#2abaff';
+      ctx.fillRect(point.x - 7, point.y - 2, 14, 4);
+    }
+  }
+
+  _drawMinimap(playerProgress, standings, playerX) {
+    const ctx = this.minimapContext;
+    ctx.drawImage(this.minimapBase, 0, 0);
+    for (const entry of standings) {
+      if (entry.player) continue;
+      const point = this._mapPoint(entry.progress, entry.x || 0);
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = `#${entry.color.toString(16).padStart(6, '0')}`;
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    const player = this._mapPoint(playerProgress, playerX);
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff334f';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
 }
