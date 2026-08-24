@@ -465,6 +465,20 @@ export class Road {
     this.materials.line.emissiveIntensity = 0.28 + night * 0.72;
   }
 
+  setWetness(factor) {
+    const wet = THREE.MathUtils.clamp(factor, 0, 1);
+    this.materials.asphalt.roughness = THREE.MathUtils.lerp(0.82, 0.22, wet);
+    this.materials.asphalt.metalness = wet * 0.18;
+    this.materials.asphalt.color.setRGB(
+      THREE.MathUtils.lerp(1, 0.58, wet),
+      THREE.MathUtils.lerp(1, 0.62, wet),
+      THREE.MathUtils.lerp(1, 0.68, wet),
+    );
+    this.materials.ramp.roughness = THREE.MathUtils.lerp(0.75, 0.24, wet);
+    this.materials.ramp.metalness = wet * 0.15;
+    this.materials.line.roughness = THREE.MathUtils.lerp(0.55, 0.25, wet);
+  }
+
   _updateSegment(segment, centerZ) {
     segment.centerZ = centerZ;
     const mode = modeForSegment(Math.round(centerZ / SEG_LEN));

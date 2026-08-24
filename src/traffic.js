@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { LANE_X } from './road.js';
 import { roadPitch, roadPoint, roadYaw } from './path.js';
-import { GRAPHICS } from './platform.js';
+import { GRAPHICS, IS_MOBILE } from './platform.js';
 import { rampSurfaceLift } from './features.js';
 import { RACE_DIFFICULTIES, RACE_DISTANCE, RACER_NAMES } from './race.js';
 
@@ -29,6 +29,20 @@ export class Traffic {
     const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 14);
     wheelGeo.rotateZ(Math.PI / 2);
     this.headlightMaterial = hlMat;
+
+    const attachHeadlightBeams = (car) => {
+      car.headlightBeams = [];
+      // Race rivals need real road illumination, not merely glowing lens meshes.
+      // Two unshadowed spots are inexpensive; mobile disables distant beams.
+      for (const lx of [-0.56, 0.56]) {
+        const beam = new THREE.SpotLight(0xffedcf, 0, IS_MOBILE ? 30 : 40, 0.31, 0.72, 1.45);
+        beam.position.set(lx, 0.7, -2.05);
+        beam.target.position.set(lx * 0.55, 0.03, -19);
+        beam.castShadow = false;
+        car.mesh.add(beam, beam.target);
+        car.headlightBeams.push(beam);
+      }
+    };
 
     for (let i = 0; i < GRAPHICS.trafficCount; i++) {
       const color = COLORS[i % COLORS.length];
@@ -60,13 +74,15 @@ export class Traffic {
 
       g.visible = false;
       this.group.add(g);
-      this.cars.push({
+      const carEntry = {
         mesh: g, lane: 0, targetLane: 0, x: 0, z: 0, speed: 0,
         halfW: 0.95, halfL: 2.2,
         passed: false, laneTimer: 0, collisionCooldown: 0,
         racerIndex: -1, finished: false, nitroTimer: 0, nitroCooldown: 0,
-        mistakeTimer: 0, mistakeCooldown: 0, nitroActive: false,
-      });
+        mistakeTimer: 0, mistakeCooldown: 0, nitroActive: false, headlightBeams: [],
+      };
+      this.cars.push(carEntry);
+      attachHeadlightBeams(carEntry);
     }
     this.spawnTimer = 0;
     this.raceMode = false;
@@ -106,6 +122,7 @@ export class Traffic {
           lens.position.set(lx, 0.72, -2.16);
           car.mesh.add(lens);
         }
+        attachHeadlightBeams(car);
       }
       draco.dispose();
     }, undefined, () => draco.dispose());
@@ -169,9 +186,15 @@ export class Traffic {
     }
   }
 
-  setNightFactor(factor) {
+  setNightFactor(factor, playerZ = 0) {
     const night = THREE.MathUtils.clamp(factor, 0, 1);
     this.headlightMaterial.emissiveIntensity = 0.45 + night * 5.2;
+    for (const car of this.cars) {
+      const closeEnough = !IS_MOBILE || Math.abs(car.z - playerZ) < 95;
+      for (const beam of car.headlightBeams || []) {
+        beam.intensity = car.mesh.visible && closeEnough ? night * 145 : 0;
+      }
+    }
   }
 
   resetRace(difficulty = 'normal') {

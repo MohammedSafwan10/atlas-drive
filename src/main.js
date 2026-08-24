@@ -13,9 +13,11 @@ import { GameAudio } from './audio.js';
 import { modeForSegment } from './features.js';
 import { RaceCourse, RACE_CHECKPOINTS, RACE_DISTANCE } from './race.js';
 import { TimeOfDay, TIME_MODES } from './timeOfDay.js';
+import { WeatherSystem, WEATHER_MODES } from './weather.js';
+import { FinishPresentation } from './finish.js';
 
 const canvas = document.getElementById('game');
-const { renderer, scene, camera, update: updateScene, updatePerformance, setTimeOfDay } = createScene(canvas);
+const { renderer, scene, camera, update: updateScene, updatePerformance, setTimeOfDay, setWeatherIntensity } = createScene(canvas);
 
 const road = new Road(scene);
 const environment = new Environment(scene);
@@ -27,13 +29,15 @@ const hud = new HUD();
 const input = new Input();
 const audio = new GameAudio();
 const timeOfDay = new TimeOfDay(setTimeOfDay);
+const finishPresentation = new FinishPresentation(scene);
+const weather = new WeatherSystem(scene, camera, road, audio, setWeatherIntensity);
 const previewParams = new URLSearchParams(location.search);
 const previewZ = import.meta.env.DEV
   ? Number(previewParams.get('previewZ'))
   : Number.NaN;
 const previewBoost = import.meta.env.DEV && previewParams.has('previewBoost');
 
-let state = 'start'; // start | countdown | playing | paused | crashed | finished
+let state = 'start'; // start | countdown | playing | paused | crashed | finishCinematic | finished
 let stateBeforePause = 'playing';
 let gameMode = 'race'; // race | endless
 let raceDifficulty = 'normal';
@@ -51,6 +55,7 @@ let playerCheckpoint = 0;
 let camPos = new THREE.Vector3(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
 let camLook = new THREE.Vector3(0, 1, -10);
 let suspended = document.hidden;
+let pendingRaceResult = null;
 
 function resetCommon() {
   void audio.start().catch((error) => console.warn('Game audio unavailable', error));
@@ -81,6 +86,9 @@ function resetCommon() {
   raceTime = 0;
   raceTopSpeed = 0;
   playerCheckpoint = 0;
+  pendingRaceResult = null;
+  finishPresentation.stop();
+  hud.showFinishCinematic(false);
 }
 
 function startEndless() {
@@ -140,6 +148,12 @@ function selectTime(mode) {
   audio.ui(mode === 'night' ? 420 : mode === 'sunset' ? 540 : 660);
 }
 
+function selectWeather(mode) {
+  weather.setMode(mode);
+  hud.setWeatherMode(weather.mode);
+  audio.ui(mode === 'storm' ? 380 : mode === 'clear' ? 720 : 560);
+}
+
 function cycleTime() {
   const next = TIME_MODES[(TIME_MODES.indexOf(timeOfDay.mode) + 1) % TIME_MODES.length];
   selectTime(next);
@@ -154,13 +168,19 @@ function showMenu() {
   state = 'start';
   menuInSetup = false;
   input.clearAll();
-  car.speed = 0;
+  finishPresentation.stop();
+  car.reset();
   traffic.reset();
+  road.reset(0);
+  environment.reset(0);
+  camPos.set(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
+  camLook.set(0, 1, -10);
   raceCourse.setVisible(false);
   hud.setMode('endless');
   hud.hidePause();
   hud.hideRaceResults();
   hud.showStart();
+  hud.showFinishCinematic(false);
   audio.setPaused(true);
 }
 
@@ -217,10 +237,10 @@ function raceCollision(rival) {
 }
 
 function finishRace() {
-  if (state === 'finished') return;
+  if (state === 'finished' || state === 'finishCinematic') return;
   const standings = traffic.getRaceStandings(car.z);
   const position = standings.findIndex((entry) => entry.player) + 1;
-  state = 'finished';
+  state = 'finishCinematic';
   car.nitroActive = false;
   input.clearAll();
   hud.showCountdown('');
@@ -232,8 +252,23 @@ function finishRace() {
   if (isRecord) {
     try { localStorage.setItem(recordKey, String(raceTime)); } catch { /* storage may be disabled */ }
   }
-  hud.showRaceResults(position, raceTime, raceTopSpeed, raceDifficulty, bestTime, isRecord);
-  audio.ui(position === 1 ? 980 : 720);
+  pendingRaceResult = { position, time: raceTime, topSpeed: raceTopSpeed, difficulty: raceDifficulty, bestTime, isRecord };
+  finishPresentation.start(car, traffic, standings);
+  hud.showFinishCinematic(true);
+  audio.finish(position);
+}
+
+function completeFinishPresentation() {
+  if (!pendingRaceResult || state === 'finished') return;
+  state = 'finished';
+  const result = pendingRaceResult;
+  hud.showRaceResults(result.position, result.time, result.topSpeed, result.difficulty, result.bestTime, result.isRecord);
+}
+
+function skipFinish() {
+  if (state !== 'finishCinematic') return;
+  finishPresentation.skipToPodium();
+  audio.ui(760);
 }
 
 hud.bind({
@@ -247,7 +282,9 @@ hud.bind({
   menu: showMenu,
   selectDifficulty,
   selectTime,
+  selectWeather,
   cycleTime,
+  skipFinish,
 });
 addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && (state === 'crashed' || state === 'finished')) restartGame();
@@ -259,6 +296,7 @@ addEventListener('keydown', (e) => {
   if ((e.code === 'Escape' || e.code === 'KeyP') && (state === 'playing' || state === 'countdown')) pauseGame();
   else if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'paused') resumeGame();
   if (e.code === 'KeyM') audio.toggleMute();
+  if ((e.code === 'Space' || e.code === 'Enter') && state === 'finishCinematic') skipFinish();
 });
 
 const clock = new THREE.Clock();
@@ -278,10 +316,18 @@ function tick() {
   if (suspended) return;
   updatePerformance(frameTime);
   const timeProfile = timeOfDay.update(state === 'paused' ? 0 : dt);
-  road.setNightFactor(timeProfile.night);
-  car.setNightFactor(timeProfile.night);
-  traffic.setNightFactor(timeProfile.night);
   hud.updateTime(timeProfile, timeOfDay.mode);
+  const currentRoadMode = modeForSegment(Math.round(car.z / SEG_LEN));
+  const weatherIntensity = weather.update(
+    state === 'paused' ? 0 : dt,
+    car,
+    state === 'playing' || state === 'finishCinematic',
+    currentRoadMode === 'tunnel',
+  );
+  const darkness = Math.max(timeProfile.night, weatherIntensity * 0.82);
+  road.setNightFactor(darkness);
+  car.setNightFactor(darkness);
+  traffic.setNightFactor(darkness, car.z);
 
   if (state === 'countdown') {
     raceCountdown -= dt;
@@ -352,7 +398,7 @@ function tick() {
     }
   }
 
-  if (state === 'finished') {
+  if (state === 'finishCinematic' || state === 'finished') {
     car.speed *= Math.exp(-dt * 1.6);
   }
 
@@ -364,22 +410,25 @@ function tick() {
     effects.update(dt, car, car.nitroActive && state === 'playing', state === 'crashed');
   }
 
-  // Chase camera: smooth follow with speed pullback
-  const speedPull = Math.min(car.speed / 88, 1);
-  const chaseDistance = IS_MOBILE ? 5.2 : 7.2;
-  const chaseHeight = IS_MOBILE ? 2.85 : 3.65;
-  const targetPos = roadPoint(
-    car.z + chaseDistance + speedPull * (IS_MOBILE ? 0.25 : 1.5),
-    car.x * 0.62,
-    chaseHeight + speedPull * (IS_MOBILE ? 0.16 : 0.42),
-  );
-  const targetLook = roadPoint(car.z - (IS_MOBILE ? 15 : 14), car.x * 0.82, 0.95);
-  // Anchor the chase rig in the same moving road frame as the car. Interpolating
-  // world-space Z created both speed-dependent zoom-out and visible hunting.
-  camPos.copy(targetPos);
-  camLook.copy(targetLook);
-  camera.position.copy(camPos);
-  camera.lookAt(camLook);
+  if (finishPresentation.active && (state === 'finishCinematic' || state === 'finished')) {
+    const finishState = finishPresentation.update(state === 'paused' ? 0 : dt, camera);
+    if (finishState.complete) completeFinishPresentation();
+  } else {
+    // Chase camera: smooth follow with speed pullback
+    const speedPull = Math.min(car.speed / 88, 1);
+    const chaseDistance = IS_MOBILE ? 5.2 : 7.2;
+    const chaseHeight = IS_MOBILE ? 2.85 : 3.65;
+    const targetPos = roadPoint(
+      car.z + chaseDistance + speedPull * (IS_MOBILE ? 0.25 : 1.5),
+      car.x * 0.62,
+      chaseHeight + speedPull * (IS_MOBILE ? 0.16 : 0.42),
+    );
+    const targetLook = roadPoint(car.z - (IS_MOBILE ? 15 : 14), car.x * 0.82, 0.95);
+    camPos.copy(targetPos);
+    camLook.copy(targetLook);
+    camera.position.copy(camPos);
+    camera.lookAt(camLook);
+  }
 
   // Short impact impulse only—never an endless post-crash vibration.
   if (impactShake > 0) {
@@ -405,7 +454,7 @@ function tick() {
   audio.update(
     car,
     state === 'playing' || state === 'countdown',
-    modeForSegment(Math.round(car.z / SEG_LEN)) === 'tunnel',
+    currentRoadMode === 'tunnel',
     gameMode === 'race'
       ? traffic.cars.slice(0, 3).map((rival) => ({ x: rival.x, z: rival.z, speed: rival.speed }))
       : [],
@@ -424,5 +473,10 @@ try {
   selectTime(localStorage.getItem('turbo-time-mode') || 'auto');
 } catch {
   hud.setTimeMode('auto');
+}
+try {
+  selectWeather(previewParams.get('weather') || localStorage.getItem('turbo-weather-mode') || 'auto');
+} catch {
+  hud.setWeatherMode('auto');
 }
 tick();

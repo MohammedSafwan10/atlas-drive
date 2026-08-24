@@ -34,6 +34,7 @@ export function createScene(canvas) {
     textureLoader.load('/assets/alps_field_4k.webp'),
     textureLoader.load('/assets/alps_field_sunset.webp'),
     textureLoader.load('/assets/alps_field_night.webp'),
+    textureLoader.load('/assets/alps_field_storm.webp'),
   ];
   for (const backdrop of backdrops) {
     backdrop.mapping = THREE.EquirectangularReflectionMapping;
@@ -46,7 +47,9 @@ export function createScene(canvas) {
       dayMap: { value: backdrops[0] },
       sunsetMap: { value: backdrops[1] },
       nightMap: { value: backdrops[2] },
+      stormMap: { value: backdrops[3] },
       timeWeights: { value: new THREE.Vector3(1, 0, 0) },
+      weatherIntensity: { value: 0 },
     },
     vertexShader: `
       varying vec2 vSkyUv;
@@ -59,14 +62,18 @@ export function createScene(canvas) {
       uniform sampler2D dayMap;
       uniform sampler2D sunsetMap;
       uniform sampler2D nightMap;
+      uniform sampler2D stormMap;
       uniform vec3 timeWeights;
+      uniform float weatherIntensity;
       varying vec2 vSkyUv;
       void main() {
         vec3 dayColor = timeWeights.x > 0.001 ? texture2D(dayMap, vSkyUv).rgb : vec3(0.0);
         vec3 sunsetColor = timeWeights.y > 0.001 ? texture2D(sunsetMap, vSkyUv).rgb : vec3(0.0);
         vec3 nightColor = timeWeights.z > 0.001 ? texture2D(nightMap, vSkyUv).rgb : vec3(0.0);
         float total = max(0.001, timeWeights.x + timeWeights.y + timeWeights.z);
-        gl_FragColor = vec4((dayColor * timeWeights.x + sunsetColor * timeWeights.y + nightColor * timeWeights.z) / total, 1.0);
+        vec3 clearColor = (dayColor * timeWeights.x + sunsetColor * timeWeights.y + nightColor * timeWeights.z) / total;
+        vec3 stormColor = texture2D(stormMap, vSkyUv).rgb;
+        gl_FragColor = vec4(mix(clearColor, stormColor, smoothstep(0.08, 0.9, weatherIntensity)), 1.0);
       }
     `,
     side: THREE.BackSide,
@@ -114,16 +121,20 @@ export function createScene(canvas) {
   const sunDirection = new THREE.Vector3(48, 68, 28);
   let lastMaterialEnvironment = 1;
   let lastMaterialRefresh = 0;
+  let weatherIntensity = 0;
+  let lightningIntensity = 0;
+  let lastTimeProfile = null;
   function setTimeOfDay(profile) {
+    lastTimeProfile = profile;
     skyMaterial.uniforms.timeWeights.value.fromArray(profile.weights);
-    renderer.toneMappingExposure = profile.exposure;
-    scene.fog.color.copy(profile.fogColor);
-    scene.fog.density = profile.fogDensity;
-    hemi.color.copy(profile.skyColor);
-    hemi.groundColor.copy(profile.groundColor);
-    hemi.intensity = profile.hemiIntensity;
+    renderer.toneMappingExposure = profile.exposure * THREE.MathUtils.lerp(1, 0.73, weatherIntensity) + lightningIntensity * 0.16;
+    scene.fog.color.copy(profile.fogColor).lerp(new THREE.Color(0x74828e), weatherIntensity * 0.72);
+    scene.fog.density = profile.fogDensity + weatherIntensity * 0.00155;
+    hemi.color.copy(profile.skyColor).lerp(new THREE.Color(0x718397), weatherIntensity * 0.7);
+    hemi.groundColor.copy(profile.groundColor).lerp(new THREE.Color(0x293330), weatherIntensity * 0.6);
+    hemi.intensity = profile.hemiIntensity * THREE.MathUtils.lerp(1, 0.68, weatherIntensity) + lightningIntensity * 0.45;
     sun.color.copy(profile.sunColor);
-    sun.intensity = profile.sunIntensity;
+    sun.intensity = profile.sunIntensity * THREE.MathUtils.lerp(1, 0.2, weatherIntensity) + lightningIntensity * 1.2;
     sunDirection.copy(profile.sunDirection);
     // Three r160 has no scene.environmentIntensity. Apply the time-of-day HDR
     // strength to unique materials, throttled so transitions remain cheap and
@@ -146,6 +157,13 @@ export function createScene(canvas) {
       lastMaterialEnvironment = profile.environmentIntensity;
       lastMaterialRefresh = now;
     }
+  }
+
+  function setWeatherIntensity(intensity, lightning = 0) {
+    weatherIntensity = THREE.MathUtils.clamp(intensity, 0, 1);
+    lightningIntensity = THREE.MathUtils.clamp(lightning, 0, 1);
+    skyMaterial.uniforms.weatherIntensity.value = weatherIntensity;
+    if (lastTimeProfile) setTimeOfDay(lastTimeProfile);
   }
 
   function resize() {
@@ -186,5 +204,5 @@ export function createScene(canvas) {
     sun.target.position.set(chaseTarget.x, 0, chaseTarget.z);
   }
 
-  return { renderer, scene, camera, update, updatePerformance, setTimeOfDay };
+  return { renderer, scene, camera, update, updatePerformance, setTimeOfDay, setWeatherIntensity };
 }

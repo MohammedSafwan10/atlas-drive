@@ -12,6 +12,9 @@ function hash(n) {
 // 'open' | 'tunnel' | 'bridge' | 'ramp'
 export function modeForSegment(k) {
   if (k > -3) return 'open'; // keep the spawn area clear
+  // Reserve a scenic, obstruction-free finish approach for the race gantry,
+  // replay cameras and podium ceremony.
+  if (Math.abs(k * SEG_LEN + 6000) < 300) return 'open';
   const h = hash(k * 1.37 + 19.7);
   if (h < 0.17) return 'tunnel';
   if (h < 0.33) return 'bridge';

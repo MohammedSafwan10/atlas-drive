@@ -22,6 +22,7 @@ export class GameAudio {
     this.nitroGain = null;
     this.rivalGain = null;
     this.rivalSource = null;
+    this.weatherGain = null;
     this.lastKmh = 0;
     this.muteButton = document.getElementById('sound-btn');
     this.muteButton?.addEventListener('click', () => this.toggleMute());
@@ -92,6 +93,7 @@ export class GameAudio {
     this.noiseBuffer = this._makeNoiseBuffer(2);
     this.roadGain = this._makeNoiseLoop('bandpass', 720, 0.75);
     this.nitroGain = this._makeNoiseLoop('highpass', 1450, 0.55);
+    this.weatherGain = this._makeNoiseLoop('lowpass', 2600, 0.25);
     this.ready = true;
     this.ui(520);
   }
@@ -206,6 +208,61 @@ export class GameAudio {
     source.stop(now + 0.25);
   }
 
+  setWeather(intensity) {
+    if (!this.ready || !this.weatherGain) return;
+    const volume = this.paused ? 0 : clamp(intensity) * 0.18;
+    this.weatherGain.gain.setTargetAtTime(volume, this.context.currentTime, 0.32);
+  }
+
+  thunder(intensity = 1) {
+    if (!this.ready || this.muted) return;
+    const now = this.context.currentTime;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    source.buffer = this.noiseBuffer;
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(260, now);
+    filter.frequency.exponentialRampToValueAtTime(58, now + 2.8);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(0.52 * clamp(intensity, 0.2, 1), now + 0.035);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 3.25);
+    source.connect(filter).connect(gain).connect(this.master);
+    source.start(now);
+    source.stop(now + 3.35);
+    for (const [frequency, offset, duration] of [[48, 0, 1.4], [72, 0.18, 0.9]]) {
+      const rumble = this.context.createOscillator();
+      const rumbleGain = this.context.createGain();
+      rumble.type = 'sine';
+      rumble.frequency.setValueAtTime(frequency, now + offset);
+      rumble.frequency.exponentialRampToValueAtTime(32, now + offset + duration);
+      rumbleGain.gain.setValueAtTime(0.18 * intensity, now + offset);
+      rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + offset + duration);
+      rumble.connect(rumbleGain).connect(this.master);
+      rumble.start(now + offset);
+      rumble.stop(now + offset + duration + 0.05);
+    }
+  }
+
+  finish(position = 1) {
+    if (!this.ready || this.muted) return;
+    const now = this.context.currentTime;
+    const notes = position === 1 ? [523.25, 659.25, 783.99, 1046.5] : [392, 493.88, 587.33];
+    notes.forEach((frequency, index) => {
+      const oscillator = this.context.createOscillator();
+      const gain = this.context.createGain();
+      oscillator.type = index === notes.length - 1 ? 'triangle' : 'sine';
+      oscillator.frequency.value = frequency;
+      const start = now + index * 0.13;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.13, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.55);
+      oscillator.connect(gain).connect(this.master);
+      oscillator.start(start);
+      oscillator.stop(start + 0.58);
+    });
+  }
+
   ui(frequency = 650) {
     if (!this.ready || this.muted) return;
     const now = this.context.currentTime;
@@ -229,6 +286,7 @@ export class GameAudio {
     this.roadGain.gain.setTargetAtTime(0, now, 0.035);
     this.nitroGain.gain.setTargetAtTime(0, now, 0.035);
     this.rivalGain?.gain.setTargetAtTime(0, now, 0.035);
+    this.weatherGain?.gain.setTargetAtTime(0, now, 0.12);
   }
 
   toggleMute() {

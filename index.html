@@ -65,6 +65,10 @@
       position: absolute; inset: 0; background: #fff; opacity: 0;
       pointer-events: none; will-change: opacity;
     }
+    #weather-flash {
+      position: absolute; inset: 0; background: #d9e8ff; opacity: 0;
+      pointer-events: none; mix-blend-mode: screen;
+    }
 
     .overlay {
       position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -161,6 +165,15 @@
     }
     #race-result-position { font-size: 72px; font-weight: 950; color: #ffd047; line-height: 1; }
     #race-result-stats { color: #b9cad9; line-height: 1.8; font-size: 15px; }
+    #finish-cinematic-ui {
+      display: none; position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
+      align-items: center; gap: 12px; padding: 9px 12px 9px 18px; border-radius: 999px;
+      background: rgba(5,10,17,.72); border: 1px solid rgba(255,208,71,.45);
+      color: #ffe9a8; font-size: 11px; font-weight: 800; letter-spacing: 1.8px;
+      backdrop-filter: blur(7px);
+    }
+    #skip-finish-btn { margin: 0; padding: 7px 14px; border-radius: 999px; font-size: 11px; }
+    .weather-setup { border-color: rgba(126,171,216,.3); }
 
     /* Touch controls (shown only on touch devices) */
     #touch-controls { display: none; }
@@ -360,6 +373,8 @@
 
     <div id="nearmiss">NEAR MISS +50</div>
     <div id="flash"></div>
+    <div id="weather-flash"></div>
+    <div id="finish-cinematic-ui"><span>FINISH REPLAY</span><button id="skip-finish-btn" class="btn">SKIP</button></div>
 
     <div id="touch-controls">
       <button id="tilt-toggle">TILT STEER</button>
@@ -417,6 +432,14 @@
             <button class="time-btn" data-time="day">DAY</button>
             <button class="time-btn" data-time="sunset">DUSK</button>
             <button class="time-btn" data-time="night">NIGHT</button>
+          </div>
+        </div>
+        <div class="race-setup weather-setup" aria-label="Weather">
+          <div class="route-chip"><strong>WEATHER</strong>Surface and visibility</div>
+          <div class="time-options">
+            <button class="weather-btn time-btn active" data-weather="auto">DYNAMIC</button>
+            <button class="weather-btn time-btn" data-weather="clear">CLEAR</button>
+            <button class="weather-btn time-btn" data-weather="storm">STORM</button>
           </div>
         </div>
         <div class="setup-actions">

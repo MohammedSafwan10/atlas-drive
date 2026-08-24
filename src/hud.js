@@ -40,6 +40,7 @@ export class HUD {
     this.livesEl = document.getElementById('lives');
     this.fpsEl = document.getElementById('fps');
     this.timeIndicator = document.getElementById('time-indicator');
+    this.finishCinematicUi = document.getElementById('finish-cinematic-ui');
 
     this.nearMissTimer = null;
     this.fpsFrames = 0;
@@ -48,7 +49,7 @@ export class HUD {
     this._buildMinimapBase();
   }
 
-  bind({ startEndless, startRace, openRaceSetup, closeRaceSetup, restart, pause, resume, menu, selectDifficulty, selectTime, cycleTime }) {
+  bind({ startEndless, startRace, openRaceSetup, closeRaceSetup, restart, pause, resume, menu, selectDifficulty, selectTime, selectWeather, cycleTime, skipFinish }) {
     document.getElementById('start-endless-btn').addEventListener('click', startEndless);
     document.getElementById('start-race-btn').addEventListener('click', openRaceSetup);
     document.getElementById('confirm-race-btn').addEventListener('click', startRace);
@@ -63,9 +64,13 @@ export class HUD {
       button.addEventListener('click', () => selectDifficulty(button.dataset.difficulty));
     }
     for (const button of document.querySelectorAll('.time-btn')) {
-      button.addEventListener('click', () => selectTime(button.dataset.time));
+      if (button.dataset.time) button.addEventListener('click', () => selectTime(button.dataset.time));
+    }
+    for (const button of document.querySelectorAll('.weather-btn')) {
+      button.addEventListener('click', () => selectWeather(button.dataset.weather));
     }
     this.timeIndicator.addEventListener('click', cycleTime);
+    document.getElementById('skip-finish-btn').addEventListener('click', skipFinish);
   }
 
   update(car, score) {
@@ -172,9 +177,20 @@ export class HUD {
   }
 
   setTimeMode(mode) {
-    for (const button of document.querySelectorAll('.time-btn')) {
+    for (const button of document.querySelectorAll('.time-btn[data-time]')) {
       button.classList.toggle('active', button.dataset.time === mode);
     }
+  }
+
+  setWeatherMode(mode) {
+    for (const button of document.querySelectorAll('.weather-btn')) {
+      button.classList.toggle('active', button.dataset.weather === mode);
+    }
+  }
+
+  showFinishCinematic(show) {
+    this.finishCinematicUi.style.display = show ? 'flex' : 'none';
+    if (show) this.showPauseButton(false);
   }
 
   updateTime(profile, mode) {
@@ -206,6 +222,7 @@ export class HUD {
   showRaceResults(position, time, topSpeed, difficulty = 'normal', bestTime = time, isRecord = false) {
     this.countdownEl.style.display = 'none';
     this.showPauseButton(false);
+    this.showFinishCinematic(false);
     this.raceResultPosition.textContent = ordinal(position);
     const difficultyLabel = RACE_DIFFICULTIES[difficulty]?.label || RACE_DIFFICULTIES.normal.label;
     this.raceResultStats.innerHTML = [
@@ -219,6 +236,7 @@ export class HUD {
 
   hideRaceResults() {
     this.raceResultsScreen.style.display = 'none';
+    this.showFinishCinematic(false);
   }
 
   _mapPoint(progress, lateral = 0) {

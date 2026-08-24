@@ -13,7 +13,10 @@ A fast, browser-based 3D highway driving game built with Three.js. Compete in a 
 - Three distinct tree species plus rocks, ferns, bushes, grass, and wildflowers
 - PBR asphalt and terrain materials, HDR environment lighting, alpine panorama, shadows, fog, bloom, and cinematic color grading
 - Dynamic eight-minute day cycle with matched morning, daytime, sunset, twilight, and starry-night lighting plus manual overrides
+- Dynamic clear-to-storm weather arc with a matched Alpine storm panorama, scalable rain, wet asphalt, wheel spray, tunnel sheltering, lightning, delayed thunder, and manual weather controls
 - Detailed player car with working brake lights, rotating tires, nitro effects, and contact shadow
+- Road-casting headlights on the player and all three race rivals, with mobile distance culling
+- Skippable multi-angle finish replay followed by a ranked three-car podium, confetti, result statistics, and finish audio stinger
 - Traffic, near-miss scoring, three-life collision system, speedometer, nitro bar, and FPS counter
 - Reactive three-band engine audio, road/wind noise, nitro, impacts, and UI sounds
 - Instanced small vegetation and distance-aware scenery for better browser performance
@@ -60,6 +63,8 @@ src/
   car.js          Player vehicle movement and visual effects
   traffic.js      AI traffic placement, recycling, and collision checks
   effects.js      Nitro and crash effects
+  weather.js      Rain, spray, lightning, thunder, and weather transitions
+  finish.js       Finish-line cameras, podium staging, and confetti
   scene.js        Renderer, lighting, fog, environment map, and post-processing
   hud.js          Score, lives, speed, nitro, and FPS interface
 public/assets/     Runtime models, textures, panorama, and Draco decoder
@@ -100,7 +105,7 @@ The world recycles deterministic 120-metre terrain slices on exact grid boundari
 
 ## Assets and credits
 
-The project uses CC0 environment assets from [Poly Haven](https://polyhaven.com/) and project-specific generated tree cutouts. Full attribution and source details are in:
+The project uses CC0 environment assets from [Poly Haven](https://polyhaven.com/) and project-specific generated tree cutouts. The storm panorama is a project-specific AI weather edit of the existing Alpine panorama; its geometry was kept aligned for seamless runtime blending. Full attribution and source details are in:
 
 - [`public/assets/realistic/SOURCES.md`](public/assets/realistic/SOURCES.md)
 - [`public/assets/terrain/SOURCES.md`](public/assets/terrain/SOURCES.md)
