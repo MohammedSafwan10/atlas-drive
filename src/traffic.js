@@ -2,13 +2,32 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { LANE_X } from './road.js';
-import { roadPitch, roadPoint, roadYaw } from './path.js';
+import { roadPitch, roadPoint, roadYaw, SEG_LEN } from './path.js';
 import { GRAPHICS, IS_MOBILE } from './platform.js';
-import { rampSurfaceLift } from './features.js';
+import { modeForSegment, rampSurfaceLift } from './features.js';
 import { RACE_DIFFICULTIES, RACE_DISTANCE, RACER_NAMES } from './race.js';
 
 // AI traffic: pooled vehicles (real Ferrari GLB clones with varied paint) in lanes at varied speeds
 export const COLORS = [0x2878d4, 0x20a15a, 0xe0a126, 0x777777, 0x8a2f2f, 0x3f3f46, 0xb8b8b8, 0x292f52];
+
+const clamp = THREE.MathUtils.clamp;
+
+function angleDelta(a, b) {
+  return Math.atan2(Math.sin(a - b), Math.cos(a - b));
+}
+
+function trackKnowledge(z) {
+  const nearYaw = roadYaw(z - 24);
+  const currentYaw = roadYaw(z + 12);
+  const farYaw = roadYaw(z - 82);
+  const nearTurn = angleDelta(nearYaw, currentYaw);
+  const approachingTurn = angleDelta(farYaw, nearYaw);
+  const severity = Math.max(Math.abs(nearTurn), Math.abs(approachingTurn) * 0.82);
+  // Approach from the outside, clip toward the apex, then naturally unwind as
+  // the sampled curvature moves behind the car.
+  const racingLine = clamp(nearTurn * 120 - approachingTurn * 35, -3.75, 3.75);
+  return { severity, racingLine };
+}
 
 export class Traffic {
   constructor(scene) {
@@ -30,6 +49,19 @@ export class Traffic {
     wheelGeo.rotateZ(Math.PI / 2);
     this.headlightMaterial = hlMat;
 
+    const nitroOuterGeo = new THREE.ConeGeometry(0.065, 0.44, 10, 1, true);
+    const nitroCoreGeo = new THREE.ConeGeometry(0.03, 0.25, 8, 1, true);
+    nitroOuterGeo.rotateX(Math.PI / 2);
+    nitroCoreGeo.rotateX(Math.PI / 2);
+    const nitroOuterMat = new THREE.MeshBasicMaterial({
+      color: 0x5aaeff, transparent: true, opacity: 0.72,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const nitroCoreMat = new THREE.MeshBasicMaterial({
+      color: 0xf3fbff, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+
     const attachHeadlightBeams = (car) => {
       car.headlightBeams = [];
       // Race rivals need real road illumination, not merely glowing lens meshes.
@@ -42,6 +74,26 @@ export class Traffic {
         car.mesh.add(beam, beam.target);
         car.headlightBeams.push(beam);
       }
+    };
+
+    const attachNitroFX = (car) => {
+      if (!car.nitroFX) {
+        car.nitroFX = new THREE.Group();
+        car.nitroFlames = [];
+        for (const lx of [-0.2, 0, 0.2]) {
+          const flame = new THREE.Group();
+          const outer = new THREE.Mesh(nitroOuterGeo, nitroOuterMat);
+          const core = new THREE.Mesh(nitroCoreGeo, nitroCoreMat);
+          outer.position.z = 0.2;
+          core.position.z = 0.12;
+          flame.position.set(lx, 0.31, 2.3);
+          flame.add(outer, core);
+          car.nitroFX.add(flame);
+          car.nitroFlames.push(flame);
+        }
+      }
+      car.nitroFX.visible = false;
+      car.mesh.add(car.nitroFX);
     };
 
     for (let i = 0; i < GRAPHICS.trafficCount; i++) {
@@ -79,10 +131,13 @@ export class Traffic {
         halfW: 0.95, halfL: 2.2,
         passed: false, laneTimer: 0, collisionCooldown: 0,
         racerIndex: -1, finished: false, nitroTimer: 0, nitroCooldown: 0,
-        mistakeTimer: 0, mistakeCooldown: 0, nitroActive: false, headlightBeams: [],
+        nitroAmount: 1, nitroActive: false, nitroFX: null, nitroFlames: [],
+        mistakeTimer: 0, mistakeCooldown: 0, headlightBeams: [],
+        raceElapsed: 0, targetX: 0, lateralVelocity: 0, tacticalState: 'RACING_LINE',
       };
       this.cars.push(carEntry);
       attachHeadlightBeams(carEntry);
+      attachNitroFX(carEntry);
     }
     this.spawnTimer = 0;
     this.raceMode = false;
@@ -123,6 +178,7 @@ export class Traffic {
           car.mesh.add(lens);
         }
         attachHeadlightBeams(car);
+        attachNitroFX(car);
       }
       draco.dispose();
     }, undefined, () => draco.dispose());
@@ -183,6 +239,8 @@ export class Traffic {
     for (const car of this.cars) {
       car.mesh.visible = false;
       car.racerIndex = -1;
+      car.nitroActive = false;
+      if (car.nitroFX) car.nitroFX.visible = false;
     }
   }
 
@@ -223,10 +281,16 @@ export class Traffic {
       car.laneTimer = 0.8 + i * 0.45;
       car.collisionCooldown = 0;
       car.nitroTimer = 0;
-      car.nitroCooldown = 5.5 + i * 1.7;
+      car.nitroCooldown = 1.4 + i * 0.65;
+      car.nitroAmount = 0.82 + i * 0.09;
       car.mistakeTimer = 0;
       car.mistakeCooldown = 12 + i * 5;
       car.nitroActive = false;
+      if (car.nitroFX) car.nitroFX.visible = false;
+      car.raceElapsed = 0;
+      car.targetX = car.x;
+      car.lateralVelocity = 0;
+      car.tacticalState = 'RACING_LINE';
       car.mesh.visible = true;
       roadPoint(car.z, car.x, rampSurfaceLift(car.z), car.mesh.position);
       car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
@@ -237,33 +301,145 @@ export class Traffic {
     if (!this.raceMode) return;
     const difficulty = RACE_DIFFICULTIES[this.raceDifficulty] || RACE_DIFFICULTIES.normal;
     const playerProgress = Math.max(0, -player.z);
+    const playerLane = LANE_X.reduce((best, laneX, lane) => (
+      Math.abs(laneX - player.x) < Math.abs(LANE_X[best] - player.x) ? lane : best
+    ), 0);
+
     for (let i = 0; i < 3; i++) {
       const car = this.cars[i];
       if (!car?.mesh.visible) continue;
       car.collisionCooldown = Math.max(0, car.collisionCooldown - dt);
 
       if (running) {
+        car.raceElapsed += dt;
         const racerProgress = Math.max(0, -car.z);
-        const baseSpeed = [55.5, 53.8, 54.8][i] * difficulty.speedScale;
-        const rubberBand = Math.max(-4, Math.min(
+        const racePhase = clamp(racerProgress / RACE_DISTANCE, 0, 1);
+        const knowledge = trackKnowledge(car.z);
+        const feature = modeForSegment(Math.round((car.z - 42) / SEG_LEN));
+        const rivals = this.cars.slice(0, 3).filter((other) => other !== car && other.mesh.visible);
+        const entities = [...rivals, {
+          x: player.x, z: player.z, speed: player.speed,
+          targetLane: playerLane, player: true,
+        }];
+
+        // Predict relative positions roughly one second ahead. Lanes with an
+        // imminent overlap are rejected; merely slower lanes receive a softer
+        // penalty so the racer can deliberately draft before passing.
+        const scoreLane = (lane) => {
+          const laneX = LANE_X[lane];
+          let score = -Math.abs(laneX - knowledge.racingLine) * (0.8 + difficulty.lineSkill * 1.4);
+          score -= Math.abs(lane - car.targetLane) * 0.7;
+          let closestAhead = Number.POSITIVE_INFINITY;
+          let aheadSpeed = difficulty.maxSpeed;
+          let danger = false;
+
+          for (const other of entities) {
+            if (Math.abs(other.x - laneX) > 2.15) continue;
+            const gapAhead = car.z - other.z;
+            const closingSpeed = car.speed - other.speed;
+            const predictedGap = gapAhead - closingSpeed * (0.85 + difficulty.lineSkill * 0.45);
+            if (Math.abs(predictedGap) < 7.6 || Math.abs(gapAhead) < 6.8) {
+              score -= 120;
+              danger = true;
+            }
+            if (gapAhead > 0 && gapAhead < 48) {
+              if (gapAhead < closestAhead) {
+                closestAhead = gapAhead;
+                aheadSpeed = other.speed;
+              }
+              score -= (48 - gapAhead) * Math.max(0.08, closingSpeed * 0.055);
+            } else if (gapAhead < 0 && gapAhead > -22) {
+              score -= (22 + gapAhead) * 0.7;
+            }
+          }
+          return { lane, score, closestAhead, aheadSpeed, danger };
+        };
+
+        let laneOptions = [0, 1, 2].map(scoreLane);
+        const currentOption = laneOptions[car.targetLane];
+        const blockedAhead = currentOption.closestAhead < 31;
+        const playerClosing = player.z > car.z && player.z - car.z < 25 && player.speed > car.speed - 2;
+
+        car.laneTimer -= dt;
+        if (car.laneTimer <= 0) {
+          car.laneTimer = difficulty.decisionTime * (0.86 + ((i * 0.37 + racerProgress * 0.0031) % 0.34));
+
+          if (blockedAhead) {
+            // A real pass is worth committing to; adjacent lanes are preferred
+            // over robotic full-width jumps unless the nearer option is unsafe.
+            for (const option of laneOptions) {
+              if (option.lane !== car.targetLane) option.score += 8.5 * difficulty.aggression;
+              option.score -= Math.max(0, Math.abs(option.lane - car.targetLane) - 1) * 3.5;
+            }
+          }
+          if (playerClosing && this.raceDifficulty !== 'easy') {
+            laneOptions[playerLane].score += 4.2 * difficulty.aggression;
+          }
+
+          laneOptions.sort((a, b) => b.score - a.score);
+          const choice = laneOptions[0];
+          const previousLane = car.targetLane;
+          if (!choice.danger || currentOption.danger) car.targetLane = choice.lane;
+          if (blockedAhead && car.targetLane !== previousLane) car.tacticalState = 'OVERTAKE';
+          else if (playerClosing && car.targetLane === playerLane) car.tacticalState = 'DEFEND';
+          else car.tacticalState = 'RACING_LINE';
+        }
+
+        // Re-score after a decision so speed and nitro use respect the newly
+        // selected lane rather than the lane occupied at the frame's start.
+        laneOptions = [0, 1, 2].map(scoreLane);
+        const selected = laneOptions[car.targetLane];
+        const fineLineOffset = clamp(knowledge.racingLine - LANE_X[car.targetLane], -0.72, 0.72);
+        car.targetX = LANE_X[car.targetLane] + fineLineOffset * difficulty.lineSkill;
+
+        const draftTarget = entities.find((other) => {
+          const gap = car.z - other.z;
+          return gap > 8 && gap < 29 && Math.abs(other.x - car.x) < 1.35;
+        });
+        const drafting = Boolean(draftTarget) && !selected.danger;
+        if (drafting && car.tacticalState === 'RACING_LINE') car.tacticalState = 'DRAFT';
+
+        // Each driver has a bounded race-phase target. This creates a strong
+        // leader, a battling midfielder and a late challenger without giving
+        // anybody an unlimited invisible catch-up speed.
+        const desiredStartGap = [34, 15, -4][i];
+        const desiredFinishGap = [9, -3, -17][i];
+        const desiredGap = THREE.MathUtils.lerp(desiredStartGap, desiredFinishGap, racePhase);
+        const actualGap = racerProgress - playerProgress;
+        const paceError = desiredGap - actualGap;
+        const adaptivePace = clamp(
+          paceError * difficulty.paceGain,
+          -difficulty.maxSlowdown,
           difficulty.maxCatchup,
-          (playerProgress - racerProgress) * difficulty.rubberBand,
-        ));
-        car.nitroCooldown -= dt;
+        );
+
+        car.nitroCooldown = Math.max(0, car.nitroCooldown - dt);
         car.mistakeCooldown -= dt;
         car.nitroTimer = Math.max(0, car.nitroTimer - dt);
         car.mistakeTimer = Math.max(0, car.mistakeTimer - dt);
 
-        // Rivals save boost for overtakes and long catch-up runs instead of
-        // receiving an invisible permanent speed advantage.
-        if (car.nitroCooldown <= 0 && (
-          playerProgress - racerProgress > 12 ||
-          Math.floor(racerProgress / 420 + i * 2) % 5 === 1
-        )) {
-          car.nitroTimer = 1.1 + i * 0.14;
-          car.nitroCooldown = (10.5 + i * 1.4) / difficulty.nitroRate;
+        const straightEnough = knowledge.severity < 0.035 && feature !== 'ramp';
+        const alignedForPass = Math.abs(car.x - car.targetX) < 1.1;
+        const needsCatchup = playerProgress - racerProgress > 16;
+        const passingChance = car.tacticalState === 'OVERTAKE' && alignedForPass && !selected.danger;
+        const finalAttack = racePhase > 0.82 && actualGap < 30;
+        const launchAttack = car.raceElapsed > 1.2 && car.raceElapsed < 5.8 && i !== 2;
+        const wantsNitro = straightEnough && (passingChance || needsCatchup || finalAttack || launchAttack);
+
+        if (!car.nitroActive && car.nitroCooldown <= 0 && car.nitroAmount > 0.2 && wantsNitro) {
+          car.nitroActive = true;
+          car.nitroTimer = 0.72 + difficulty.nitroRate * 0.7;
+          car.tacticalState = passingChance ? 'NITRO PASS' : finalAttack ? 'FINAL ATTACK' : 'BOOST';
         }
-        car.nitroActive = car.nitroTimer > 0;
+        if (car.nitroActive) {
+          car.nitroAmount = Math.max(0, car.nitroAmount - dt * (0.25 + (1 - difficulty.nitroRate) * 0.04));
+          if (car.nitroAmount <= 0.015 || (!straightEnough && car.nitroTimer <= 0) || (car.nitroTimer <= 0 && !wantsNitro)) {
+            car.nitroActive = false;
+            car.nitroCooldown = 3.6 - difficulty.nitroRate * 1.2;
+          }
+        } else {
+          car.nitroAmount = Math.min(1, car.nitroAmount + dt * (drafting ? 0.085 : 0.045));
+        }
 
         // Small, infrequent errors make rivals feel human and give the player
         // genuine passing windows. Easier opponents make them more often.
@@ -271,54 +447,48 @@ export class Traffic {
           car.mistakeTimer = 0.75 + Math.random() * 0.65;
           car.mistakeCooldown = (16 + Math.random() * 16) / difficulty.mistakeRate;
         }
-        const finishEase = racerProgress > RACE_DISTANCE ? 0.82 : 1;
-        const boost = car.nitroActive ? 8.5 : 0;
-        const mistakeLoss = car.mistakeTimer > 0 ? 11 : 0;
-        const targetSpeed = (baseSpeed + rubberBand + boost - mistakeLoss) * finishEase;
-        car.speed += Math.max(-9 * dt, Math.min(difficulty.acceleration * dt, targetSpeed - car.speed));
-
-        car.laneTimer -= dt;
-        if (car.laneTimer <= 0) {
-          car.laneTimer = (1.05 + ((i * 0.73 + racerProgress * 0.01) % 0.85)) * difficulty.reaction;
-          const playerLane = LANE_X.reduce((best, laneX, lane) => (
-            Math.abs(laneX - player.x) < Math.abs(LANE_X[best] - player.x) ? lane : best
-          ), 0);
-          const laneClear = (lane) => {
-            if (lane === playerLane && Math.abs(player.z - car.z) < 14) return false;
-            return this.cars.slice(0, 3).every((other) => (
-              other === car || other.targetLane !== lane || Math.abs(other.z - car.z) > 14
-            ));
-          };
-          const rivalAhead = this.cars.slice(0, 3).some((other) => (
-            other !== car && other.targetLane === car.targetLane && other.z < car.z && car.z - other.z < 22
-          ));
-          const playerAhead = playerLane === car.targetLane && player.z < car.z && car.z - player.z < 22;
-          const blockedAhead = rivalAhead || playerAhead;
-          const safeLanes = [0, 1, 2].filter(laneClear);
-
-          if (blockedAhead && safeLanes.length) {
-            // Prefer an adjacent passing lane; jumping across the entire road
-            // made the old traffic look robotic.
-            const passingLanes = safeLanes.filter((lane) => lane !== car.targetLane);
-            passingLanes.sort((a, b) => Math.abs(a - car.targetLane) - Math.abs(b - car.targetLane));
-            if (passingLanes.length) car.targetLane = passingLanes[0];
-          } else {
-            const playerClosing = player.z > car.z && player.z - car.z < 24;
-            const defend = playerClosing && difficulty !== RACE_DIFFICULTIES.easy && laneClear(playerLane);
-            if (defend) car.targetLane = playerLane;
-            else if (car.mistakeTimer > 0 && safeLanes.length) {
-              car.targetLane = safeLanes[(i + Math.floor(racerProgress / 300)) % safeLanes.length];
-            }
-          }
+        const curvePenalty = Math.min(12, knowledge.severity * (82 - difficulty.lineSkill * 24));
+        const featurePenalty = feature === 'ramp' ? 3.5 : 0;
+        const launchPace = Math.max(0, 6.5 - car.raceElapsed) * (0.72 + difficulty.aggression * 0.25);
+        const personality = [1.1, -0.7, 0.25][i];
+        const boost = car.nitroActive ? 13.5 : 0;
+        const draftBonus = drafting ? 1.6 : 0;
+        const mistakeLoss = car.mistakeTimer > 0 ? 8 + 5 * difficulty.mistakeRate : 0;
+        let targetSpeed = difficulty.cruiseSpeed + personality + adaptivePace + launchPace
+          + boost + draftBonus - curvePenalty - featurePenalty - mistakeLoss;
+        if (selected.closestAhead < 18 && selected.aheadSpeed < targetSpeed && car.tacticalState !== 'OVERTAKE') {
+          targetSpeed = Math.min(targetSpeed, selected.aheadSpeed + Math.max(0, (selected.closestAhead - 7) * 0.32));
         }
+        if (racerProgress > RACE_DISTANCE) targetSpeed *= 0.82;
+        targetSpeed = Math.min(targetSpeed, difficulty.maxSpeed);
 
-        car.x += (LANE_X[car.targetLane] - car.x) * Math.min(1, dt * (car.mistakeTimer > 0 ? 0.72 : 1.35));
+        const speedDelta = targetSpeed - car.speed;
+        const acceleration = difficulty.acceleration * (car.nitroActive ? 1.65 : 1);
+        car.speed += clamp(speedDelta, -18 * dt, acceleration * dt);
+
+        const previousX = car.x;
+        const lateralResponse = car.mistakeTimer > 0 ? 0.82 : 1.7 + difficulty.lineSkill * 0.85;
+        car.x += (car.targetX - car.x) * Math.min(1, dt * lateralResponse);
+        car.lateralVelocity += (((car.x - previousX) / Math.max(dt, 0.001)) - car.lateralVelocity) * Math.min(1, dt * 6);
         car.z -= car.speed * dt;
         if (-car.z >= RACE_DISTANCE) car.finished = true;
       }
 
       roadPoint(car.z, car.x, rampSurfaceLift(car.z), car.mesh.position);
-      car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
+      const steerYaw = clamp(car.lateralVelocity * -0.012, -0.055, 0.055);
+      const bodyRoll = clamp(car.lateralVelocity * -0.008, -0.035, 0.035);
+      car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z) + steerYaw, bodyRoll);
+
+      if (car.nitroFX) {
+        car.nitroFX.visible = running && car.nitroActive;
+        if (car.nitroFX.visible) {
+          const time = performance.now() * 0.001;
+          for (let flame = 0; flame < car.nitroFlames.length; flame++) {
+            const flicker = 0.9 + Math.sin(time * 29 + i * 2.1 + flame) * 0.12;
+            car.nitroFlames[flame].scale.set(flicker, flicker, 0.88 + flicker * 0.22);
+          }
+        }
+      }
 
       const dx = Math.abs(car.x - player.x);
       const dz = Math.abs(car.z - player.z);

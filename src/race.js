@@ -7,16 +7,19 @@ export const RACER_NAMES = ['YOU', 'APEX', 'VOLT', 'NOVA'];
 export const RACE_ROUTE_NAME = 'ALPINE PASS';
 export const RACE_DIFFICULTIES = {
   easy: {
-    label: 'ROOKIE', speedScale: 0.91, acceleration: 5.4, rubberBand: 0.018,
-    maxCatchup: 4.5, reaction: 1.25, mistakeRate: 1.55, nitroRate: 0.42,
+    label: 'ROOKIE', cruiseSpeed: 54.5, maxSpeed: 70, acceleration: 10.5,
+    paceGain: 0.032, maxCatchup: 4.5, maxSlowdown: 5.5, decisionTime: 0.48,
+    lineSkill: 0.58, aggression: 0.28, mistakeRate: 1.5, nitroRate: 0.48,
   },
   normal: {
-    label: 'SPORT', speedScale: 1, acceleration: 6.4, rubberBand: 0.024,
-    maxCatchup: 6.5, reaction: 1, mistakeRate: 1, nitroRate: 0.72,
+    label: 'SPORT', cruiseSpeed: 61.5, maxSpeed: 79, acceleration: 13.5,
+    paceGain: 0.04, maxCatchup: 6.5, maxSlowdown: 4.5, decisionTime: 0.32,
+    lineSkill: 0.82, aggression: 0.62, mistakeRate: 0.9, nitroRate: 0.78,
   },
   hard: {
-    label: 'PRO', speedScale: 1.075, acceleration: 7.2, rubberBand: 0.029,
-    maxCatchup: 7.5, reaction: 0.78, mistakeRate: 0.58, nitroRate: 1,
+    label: 'PRO', cruiseSpeed: 67.5, maxSpeed: 88, acceleration: 17,
+    paceGain: 0.05, maxCatchup: 8.5, maxSlowdown: 3.2, decisionTime: 0.2,
+    lineSkill: 1, aggression: 0.88, mistakeRate: 0.34, nitroRate: 1,
   },
 };
 
