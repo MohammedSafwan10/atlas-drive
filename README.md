@@ -7,7 +7,8 @@ A fast, browser-based 3D highway driving game built with Three.js. Compete in a 
 ## Highlights
 
 - Curved, gently elevated endless highway with road-aligned traffic and chase camera
-- Four-car 2 km sprint with countdown, race AI, checkpoints, live position, sampled-road minimap, finish gantry, and results
+- Four-car 6 km Alpine Pass sprint with six sectors, live position, sampled-road minimap, finish gantry, and best-time records
+- Rookie, Sport, and Pro rival AI with tactical overtakes, defending, nitro bursts, and believable mistakes
 - Uneven 3D terrain with gravel shoulders, drainage ditches, guardrails, fences, reflectors, signs, and utility poles
 - Three distinct tree species plus rocks, ferns, bushes, grass, and wildflowers
 - PBR asphalt and terrain materials, HDR environment lighting, alpine panorama, shadows, fog, bloom, and cinematic color grading

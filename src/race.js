@@ -1,9 +1,24 @@
 import * as THREE from 'three';
 import { placeOnRoad } from './path.js';
 
-export const RACE_DISTANCE = 2000;
-export const RACE_CHECKPOINTS = [500, 1000, 1500, RACE_DISTANCE];
+export const RACE_DISTANCE = 6000;
+export const RACE_CHECKPOINTS = [1000, 2000, 3000, 4000, 5000, RACE_DISTANCE];
 export const RACER_NAMES = ['YOU', 'APEX', 'VOLT', 'NOVA'];
+export const RACE_ROUTE_NAME = 'ALPINE PASS';
+export const RACE_DIFFICULTIES = {
+  easy: {
+    label: 'ROOKIE', speedScale: 0.91, acceleration: 5.4, rubberBand: 0.018,
+    maxCatchup: 4.5, reaction: 1.25, mistakeRate: 1.55, nitroRate: 0.42,
+  },
+  normal: {
+    label: 'SPORT', speedScale: 1, acceleration: 6.4, rubberBand: 0.024,
+    maxCatchup: 6.5, reaction: 1, mistakeRate: 1, nitroRate: 0.72,
+  },
+  hard: {
+    label: 'PRO', speedScale: 1.075, acceleration: 7.2, rubberBand: 0.029,
+    maxCatchup: 7.5, reaction: 0.78, mistakeRate: 0.58, nitroRate: 1,
+  },
+};
 
 function makeCanvasTexture(draw, width = 1024, height = 256) {
   const canvas = document.createElement('canvas');

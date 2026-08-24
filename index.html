@@ -98,6 +98,20 @@
     .mode-card.primary { border-color: rgba(34,184,255,0.75); box-shadow: 0 8px 30px rgba(20,155,235,0.25); }
     .mode-card strong { display: block; font-size: 17px; letter-spacing: 1px; }
     .mode-card span { display: block; color: #9fb4c8; font-size: 12px; margin-top: 5px; line-height: 1.35; }
+    .race-setup {
+      display: flex; align-items: center; justify-content: center; gap: 14px;
+      padding: 9px 14px; border-radius: 11px; background: rgba(7,13,21,0.72);
+      border: 1px solid rgba(80,180,235,0.24);
+    }
+    .route-chip { text-align: left; color: #d9e9f5; font-size: 12px; letter-spacing: 0.7px; }
+    .route-chip strong { display: block; color: #40c4ff; font-size: 14px; letter-spacing: 1.2px; }
+    .difficulty-options { display: flex; gap: 5px; }
+    .difficulty-btn {
+      pointer-events: auto; cursor: pointer; padding: 7px 11px; border-radius: 7px;
+      border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.055);
+      color: #aebdca; font: 700 11px/1 'Segoe UI', sans-serif; letter-spacing: 0.8px;
+    }
+    .difficulty-btn.active { color: #fff; border-color: #28baff; background: rgba(27,151,224,0.35); }
 
     #race-hud {
       display: none; position: absolute; top: 18px; left: 22px; min-width: 148px;
@@ -252,6 +266,10 @@
     body.touch .mode-card { width: 190px; min-height: 70px; padding: 9px 12px; }
     body.touch .mode-card strong { font-size: 13px; }
     body.touch .mode-card span { font-size: 9px; }
+    body.touch .race-setup { gap: 8px; padding: 6px 9px; }
+    body.touch .route-chip { font-size: 9px; }
+    body.touch .route-chip strong { font-size: 10px; }
+    body.touch .difficulty-btn { padding: 6px 8px; font-size: 9px; }
     body.touch #race-hud {
       top: max(8px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left));
       min-width: 105px; padding: 6px 9px; border-radius: 8px;
@@ -276,9 +294,9 @@
     </div>
 
     <div id="race-hud">
-      <div class="hud-label">Race Position</div>
+      <div id="race-meta" class="hud-label">Alpine Pass · Sport</div>
       <div id="race-position">4th <small>/ 4</small></div>
-      <div id="race-progress-text">0.00 / 2.00 km</div>
+      <div id="race-progress-text">0.00 / 6.00 km</div>
       <div id="race-progress-track"><div id="race-progress-fill"></div></div>
       <div id="race-time">00:00.000</div>
     </div>
@@ -328,10 +346,18 @@
         <span class="key">Shift</span> nitro &nbsp;·&nbsp; <span class="key">P</span> pause &nbsp;·&nbsp; <span class="key">M</span> mute<br/>
         <em style="font-size:13px;color:#8fa3b8;">On touch devices: on-screen pedals + arrows, or enable TILT STEER</em>
       </p>
+      <div class="race-setup" aria-label="Race setup">
+        <div class="route-chip"><strong>ALPINE PASS</strong>6.0 km · 6 sectors</div>
+        <div class="difficulty-options" aria-label="AI difficulty">
+          <button class="difficulty-btn" data-difficulty="easy">ROOKIE</button>
+          <button class="difficulty-btn active" data-difficulty="normal">SPORT</button>
+          <button class="difficulty-btn" data-difficulty="hard">PRO</button>
+        </div>
+      </div>
       <div class="mode-buttons">
         <button id="start-race-btn" class="mode-card primary">
           <strong>4-CAR SPRINT</strong>
-          <span>2 km race · 3 rivals · minimap · checkpoints</span>
+          <span>6 km mountain race · tactical rivals · minimap · checkpoints</span>
         </button>
         <button id="start-endless-btn" class="mode-card">
           <strong>ENDLESS HIGHWAY</strong>

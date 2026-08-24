@@ -5,7 +5,7 @@ import { LANE_X } from './road.js';
 import { roadPitch, roadPoint, roadYaw } from './path.js';
 import { GRAPHICS } from './platform.js';
 import { rampSurfaceLift } from './features.js';
-import { RACE_DISTANCE, RACER_NAMES } from './race.js';
+import { RACE_DIFFICULTIES, RACE_DISTANCE, RACER_NAMES } from './race.js';
 
 // AI traffic: pooled vehicles (real Ferrari GLB clones with varied paint) in lanes at varied speeds
 export const COLORS = [0x2878d4, 0x20a15a, 0xe0a126, 0x777777, 0x8a2f2f, 0x3f3f46, 0xb8b8b8, 0x292f52];
@@ -63,7 +63,8 @@ export class Traffic {
         mesh: g, lane: 0, targetLane: 0, x: 0, z: 0, speed: 0,
         halfW: 0.95, halfL: 2.2,
         passed: false, laneTimer: 0, collisionCooldown: 0,
-        racerIndex: -1, finished: false,
+        racerIndex: -1, finished: false, nitroTimer: 0, nitroCooldown: 0,
+        mistakeTimer: 0, mistakeCooldown: 0, nitroActive: false,
       });
     }
     this.spawnTimer = 0;
@@ -162,8 +163,9 @@ export class Traffic {
     }
   }
 
-  resetRace() {
+  resetRace(difficulty = 'normal') {
     this.raceMode = true;
+    this.raceDifficulty = RACE_DIFFICULTIES[difficulty] ? difficulty : 'normal';
     const grid = [
       { lane: 0, z: -2.2, speed: 0 },
       { lane: 2, z: -2.2, speed: 0 },
@@ -186,6 +188,11 @@ export class Traffic {
       car.finished = false;
       car.laneTimer = 0.8 + i * 0.45;
       car.collisionCooldown = 0;
+      car.nitroTimer = 0;
+      car.nitroCooldown = 5.5 + i * 1.7;
+      car.mistakeTimer = 0;
+      car.mistakeCooldown = 12 + i * 5;
+      car.nitroActive = false;
       car.mesh.visible = true;
       roadPoint(car.z, car.x, rampSurfaceLift(car.z), car.mesh.position);
       car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
@@ -194,6 +201,7 @@ export class Traffic {
 
   updateRace(dt, player, running, onCrash) {
     if (!this.raceMode) return;
+    const difficulty = RACE_DIFFICULTIES[this.raceDifficulty] || RACE_DIFFICULTIES.normal;
     const playerProgress = Math.max(0, -player.z);
     for (let i = 0; i < 3; i++) {
       const car = this.cars[i];
@@ -202,30 +210,75 @@ export class Traffic {
 
       if (running) {
         const racerProgress = Math.max(0, -car.z);
-        const baseSpeed = [53, 50.5, 51.8][i];
-        const rubberBand = Math.max(-7, Math.min(10, (playerProgress - racerProgress) * 0.038));
+        const baseSpeed = [55.5, 53.8, 54.8][i] * difficulty.speedScale;
+        const rubberBand = Math.max(-4, Math.min(
+          difficulty.maxCatchup,
+          (playerProgress - racerProgress) * difficulty.rubberBand,
+        ));
+        car.nitroCooldown -= dt;
+        car.mistakeCooldown -= dt;
+        car.nitroTimer = Math.max(0, car.nitroTimer - dt);
+        car.mistakeTimer = Math.max(0, car.mistakeTimer - dt);
+
+        // Rivals save boost for overtakes and long catch-up runs instead of
+        // receiving an invisible permanent speed advantage.
+        if (car.nitroCooldown <= 0 && (
+          playerProgress - racerProgress > 12 ||
+          Math.floor(racerProgress / 420 + i * 2) % 5 === 1
+        )) {
+          car.nitroTimer = 1.1 + i * 0.14;
+          car.nitroCooldown = (10.5 + i * 1.4) / difficulty.nitroRate;
+        }
+        car.nitroActive = car.nitroTimer > 0;
+
+        // Small, infrequent errors make rivals feel human and give the player
+        // genuine passing windows. Easier opponents make them more often.
+        if (car.mistakeCooldown <= 0 && Math.random() < dt * 0.75 * difficulty.mistakeRate) {
+          car.mistakeTimer = 0.75 + Math.random() * 0.65;
+          car.mistakeCooldown = (16 + Math.random() * 16) / difficulty.mistakeRate;
+        }
         const finishEase = racerProgress > RACE_DISTANCE ? 0.82 : 1;
-        const targetSpeed = (baseSpeed + rubberBand) * finishEase;
-        car.speed += Math.max(-8 * dt, Math.min(6.5 * dt, targetSpeed - car.speed));
+        const boost = car.nitroActive ? 8.5 : 0;
+        const mistakeLoss = car.mistakeTimer > 0 ? 11 : 0;
+        const targetSpeed = (baseSpeed + rubberBand + boost - mistakeLoss) * finishEase;
+        car.speed += Math.max(-9 * dt, Math.min(difficulty.acceleration * dt, targetSpeed - car.speed));
 
         car.laneTimer -= dt;
         if (car.laneTimer <= 0) {
-          car.laneTimer = 1.25 + ((i * 0.73 + racerProgress * 0.01) % 1.1);
-          let blocked = false;
-          for (let j = 0; j < 3; j++) {
-            if (j === i) continue;
-            const other = this.cars[j];
-            if (other.targetLane === car.targetLane && other.z < car.z && car.z - other.z < 17) blocked = true;
-          }
-          if (blocked) {
-            const choices = [0, 1, 2].filter((lane) => lane !== car.targetLane);
-            car.targetLane = choices[(i + Math.floor(racerProgress / 90)) % choices.length];
-          } else if (Math.floor(racerProgress / 180 + i) % 3 === 0) {
-            car.targetLane = (car.targetLane + (i % 2 ? 1 : 2)) % 3;
+          car.laneTimer = (1.05 + ((i * 0.73 + racerProgress * 0.01) % 0.85)) * difficulty.reaction;
+          const playerLane = LANE_X.reduce((best, laneX, lane) => (
+            Math.abs(laneX - player.x) < Math.abs(LANE_X[best] - player.x) ? lane : best
+          ), 0);
+          const laneClear = (lane) => {
+            if (lane === playerLane && Math.abs(player.z - car.z) < 14) return false;
+            return this.cars.slice(0, 3).every((other) => (
+              other === car || other.targetLane !== lane || Math.abs(other.z - car.z) > 14
+            ));
+          };
+          const rivalAhead = this.cars.slice(0, 3).some((other) => (
+            other !== car && other.targetLane === car.targetLane && other.z < car.z && car.z - other.z < 22
+          ));
+          const playerAhead = playerLane === car.targetLane && player.z < car.z && car.z - player.z < 22;
+          const blockedAhead = rivalAhead || playerAhead;
+          const safeLanes = [0, 1, 2].filter(laneClear);
+
+          if (blockedAhead && safeLanes.length) {
+            // Prefer an adjacent passing lane; jumping across the entire road
+            // made the old traffic look robotic.
+            const passingLanes = safeLanes.filter((lane) => lane !== car.targetLane);
+            passingLanes.sort((a, b) => Math.abs(a - car.targetLane) - Math.abs(b - car.targetLane));
+            if (passingLanes.length) car.targetLane = passingLanes[0];
+          } else {
+            const playerClosing = player.z > car.z && player.z - car.z < 24;
+            const defend = playerClosing && difficulty !== RACE_DIFFICULTIES.easy && laneClear(playerLane);
+            if (defend) car.targetLane = playerLane;
+            else if (car.mistakeTimer > 0 && safeLanes.length) {
+              car.targetLane = safeLanes[(i + Math.floor(racerProgress / 300)) % safeLanes.length];
+            }
           }
         }
 
-        car.x += (LANE_X[car.targetLane] - car.x) * Math.min(1, dt * 1.45);
+        car.x += (LANE_X[car.targetLane] - car.x) * Math.min(1, dt * (car.mistakeTimer > 0 ? 0.72 : 1.35));
         car.z -= car.speed * dt;
         if (-car.z >= RACE_DISTANCE) car.finished = true;
       }

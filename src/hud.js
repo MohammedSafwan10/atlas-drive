@@ -1,5 +1,5 @@
 import { roadCenterX } from './path.js';
-import { RACE_CHECKPOINTS, RACE_DISTANCE } from './race.js';
+import { RACE_CHECKPOINTS, RACE_DIFFICULTIES, RACE_DISTANCE, RACE_ROUTE_NAME } from './race.js';
 
 const ordinal = (position) => `${position}${position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th'}`;
 
@@ -24,6 +24,7 @@ export class HUD {
     this.endlessHud = document.getElementById('endless-hud');
     this.raceHud = document.getElementById('race-hud');
     this.racePositionEl = document.getElementById('race-position');
+    this.raceMetaEl = document.getElementById('race-meta');
     this.raceProgressText = document.getElementById('race-progress-text');
     this.raceProgressFill = document.getElementById('race-progress-fill');
     this.raceTimeEl = document.getElementById('race-time');
@@ -45,7 +46,7 @@ export class HUD {
     this._buildMinimapBase();
   }
 
-  bind({ startEndless, startRace, restart, pause, resume, menu }) {
+  bind({ startEndless, startRace, restart, pause, resume, menu, selectDifficulty }) {
     document.getElementById('start-endless-btn').addEventListener('click', startEndless);
     document.getElementById('start-race-btn').addEventListener('click', startRace);
     document.getElementById('restart-btn').addEventListener('click', restart);
@@ -54,6 +55,9 @@ export class HUD {
     document.getElementById('results-menu-btn').addEventListener('click', menu);
     this.pauseButton.addEventListener('click', pause);
     document.getElementById('resume-btn').addEventListener('click', resume);
+    for (const button of document.querySelectorAll('.difficulty-btn')) {
+      button.addEventListener('click', () => selectDifficulty(button.dataset.difficulty));
+    }
   }
 
   update(car, score) {
@@ -136,6 +140,14 @@ export class HUD {
     this.minimapWrap.style.display = race ? 'block' : 'none';
   }
 
+  setDifficulty(difficulty) {
+    const resolved = RACE_DIFFICULTIES[difficulty] ? difficulty : 'normal';
+    for (const button of document.querySelectorAll('.difficulty-btn')) {
+      button.classList.toggle('active', button.dataset.difficulty === resolved);
+    }
+    this.raceMetaEl.textContent = `${RACE_ROUTE_NAME} · ${RACE_DIFFICULTIES[resolved].label}`;
+  }
+
   showCountdown(value) {
     if (!value) {
       this.countdownEl.style.display = 'none';
@@ -158,11 +170,17 @@ export class HUD {
     this._drawMinimap(progress, standings, playerX);
   }
 
-  showRaceResults(position, time, topSpeed) {
+  showRaceResults(position, time, topSpeed, difficulty = 'normal', bestTime = time, isRecord = false) {
     this.countdownEl.style.display = 'none';
     this.showPauseButton(false);
     this.raceResultPosition.textContent = ordinal(position);
-    this.raceResultStats.innerHTML = `Time ${formatTime(time)}<br/>Top speed ${Math.round(topSpeed)} km/h`;
+    const difficultyLabel = RACE_DIFFICULTIES[difficulty]?.label || RACE_DIFFICULTIES.normal.label;
+    this.raceResultStats.innerHTML = [
+      `${RACE_ROUTE_NAME} · ${difficultyLabel}`,
+      `Time ${formatTime(time)}${isRecord ? ' · NEW BEST' : ''}`,
+      `Best ${formatTime(bestTime)}`,
+      `Top speed ${Math.round(topSpeed)} km/h`,
+    ].join('<br/>');
     this.raceResultsScreen.style.display = 'flex';
   }
 
@@ -191,8 +209,8 @@ export class HUD {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    for (let i = 0; i <= 90; i++) {
-      const point = this._mapPoint((i / 90) * RACE_DISTANCE);
+    for (let i = 0; i <= 240; i++) {
+      const point = this._mapPoint((i / 240) * RACE_DISTANCE);
       if (i === 0) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
     }

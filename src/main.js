@@ -34,6 +34,7 @@ const previewBoost = import.meta.env.DEV && previewParams.has('previewBoost');
 let state = 'start'; // start | countdown | playing | paused | crashed | finished
 let stateBeforePause = 'playing';
 let gameMode = 'race'; // race | endless
+let raceDifficulty = 'normal';
 let score = 0;
 let lives = 3;
 const MAX_LIVES = 3;
@@ -95,7 +96,7 @@ function startRace() {
   resetCommon();
   car.x = 0;
   car.syncToRoad();
-  traffic.resetRace();
+  traffic.resetRace(raceDifficulty);
   raceCourse.setVisible(true);
   hud.setMode('race');
   raceCountdown = 3.25;
@@ -104,6 +105,14 @@ function startRace() {
   input.clearAll();
   hud.showCountdown('3');
   audio.ui(440);
+}
+
+function selectDifficulty(difficulty) {
+  if (!['easy', 'normal', 'hard'].includes(difficulty)) return;
+  raceDifficulty = difficulty;
+  hud.setDifficulty(difficulty);
+  try { localStorage.setItem('turbo-race-difficulty', difficulty); } catch { /* storage may be disabled */ }
+  audio.ui(difficulty === 'hard' ? 760 : difficulty === 'easy' ? 480 : 620);
 }
 
 function restartGame() {
@@ -184,7 +193,15 @@ function finishRace() {
   car.nitroActive = false;
   input.clearAll();
   hud.showCountdown('');
-  hud.showRaceResults(position, raceTime, raceTopSpeed);
+  const recordKey = `turbo-best-${raceDifficulty}`;
+  let previousBest = Number.POSITIVE_INFINITY;
+  try { previousBest = Number(localStorage.getItem(recordKey)) || Number.POSITIVE_INFINITY; } catch { /* storage may be disabled */ }
+  const isRecord = raceTime < previousBest;
+  const bestTime = isRecord ? raceTime : previousBest;
+  if (isRecord) {
+    try { localStorage.setItem(recordKey, String(raceTime)); } catch { /* storage may be disabled */ }
+  }
+  hud.showRaceResults(position, raceTime, raceTopSpeed, raceDifficulty, bestTime, isRecord);
   audio.ui(position === 1 ? 980 : 720);
 }
 
@@ -195,6 +212,7 @@ hud.bind({
   pause: pauseGame,
   resume: resumeGame,
   menu: showMenu,
+  selectDifficulty,
 });
 addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && (state === 'crashed' || state === 'finished')) restartGame();
@@ -283,7 +301,7 @@ function tick() {
       const progress = Math.max(0, -car.z);
       while (playerCheckpoint < RACE_CHECKPOINTS.length - 1 && progress >= RACE_CHECKPOINTS[playerCheckpoint]) {
         playerCheckpoint += 1;
-        hud.showNearMiss(`CHECKPOINT ${playerCheckpoint} / 3`);
+        hud.showNearMiss(`CHECKPOINT ${playerCheckpoint} / ${RACE_CHECKPOINTS.length - 1}`);
         audio.ui(700 + playerCheckpoint * 70);
       }
       if (progress >= RACE_DISTANCE) finishRace();
@@ -353,4 +371,9 @@ function tick() {
 
 hud.showStart();
 hud.setMode('endless');
+try {
+  selectDifficulty(localStorage.getItem('turbo-race-difficulty') || 'normal');
+} catch {
+  hud.setDifficulty(raceDifficulty);
+}
 tick();
