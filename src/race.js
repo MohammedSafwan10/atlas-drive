@@ -17,9 +17,9 @@ export const RACE_DIFFICULTIES = {
     lineSkill: 0.82, aggression: 0.62, mistakeRate: 0.9, nitroRate: 0.78,
   },
   hard: {
-    label: 'PRO', cruiseSpeed: 67.5, maxSpeed: 88, acceleration: 17,
-    paceGain: 0.05, maxCatchup: 8.5, maxSlowdown: 3.2, decisionTime: 0.2,
-    lineSkill: 1, aggression: 0.88, mistakeRate: 0.34, nitroRate: 1,
+    label: 'PRO', cruiseSpeed: 63.5, maxSpeed: 84, acceleration: 15,
+    paceGain: 0.043, maxCatchup: 6.5, maxSlowdown: 4, decisionTime: 0.22,
+    lineSkill: 0.96, aggression: 0.82, mistakeRate: 0.5, nitroRate: 0.92,
   },
 };
 

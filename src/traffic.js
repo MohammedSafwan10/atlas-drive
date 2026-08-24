@@ -29,6 +29,20 @@ function trackKnowledge(z) {
   return { severity, racingLine };
 }
 
+function makeNitroGlowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d');
+  const gradient = context.createRadialGradient(32, 32, 1, 32, 32, 31);
+  gradient.addColorStop(0, 'rgba(235,250,255,1)');
+  gradient.addColorStop(0.18, 'rgba(69,174,255,.92)');
+  gradient.addColorStop(0.52, 'rgba(20,103,255,.32)');
+  gradient.addColorStop(1, 'rgba(0,45,180,0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(canvas);
+}
+
 export class Traffic {
   constructor(scene) {
     this.cars = [];
@@ -49,8 +63,10 @@ export class Traffic {
     wheelGeo.rotateZ(Math.PI / 2);
     this.headlightMaterial = hlMat;
 
-    const nitroOuterGeo = new THREE.ConeGeometry(0.065, 0.44, 10, 1, true);
-    const nitroCoreGeo = new THREE.ConeGeometry(0.03, 0.25, 8, 1, true);
+    // Rival effects are slightly larger than the player's physically-sized
+    // flames so they remain readable several car lengths down the road.
+    const nitroOuterGeo = new THREE.ConeGeometry(0.09, 0.68, 12, 1, true);
+    const nitroCoreGeo = new THREE.ConeGeometry(0.042, 0.4, 10, 1, true);
     nitroOuterGeo.rotateX(Math.PI / 2);
     nitroCoreGeo.rotateX(Math.PI / 2);
     const nitroOuterMat = new THREE.MeshBasicMaterial({
@@ -60,6 +76,11 @@ export class Traffic {
     const nitroCoreMat = new THREE.MeshBasicMaterial({
       color: 0xf3fbff, transparent: true, opacity: 0.9,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const nitroGlowMat = new THREE.SpriteMaterial({
+      map: makeNitroGlowTexture(), color: 0x75c6ff,
+      transparent: true, opacity: 0.78, blending: THREE.AdditiveBlending,
+      depthWrite: false, depthTest: true,
     });
 
     const attachHeadlightBeams = (car) => {
@@ -91,6 +112,13 @@ export class Traffic {
           car.nitroFX.add(flame);
           car.nitroFlames.push(flame);
         }
+        car.nitroGlow = new THREE.Sprite(nitroGlowMat);
+        car.nitroGlow.position.set(0, 0.34, 2.66);
+        car.nitroGlow.scale.set(1.15, 0.72, 1);
+        car.nitroFX.add(car.nitroGlow);
+        car.nitroLight = new THREE.PointLight(0x2d8cff, 0.85, 5, 2);
+        car.nitroLight.position.set(0, 0.36, 2.48);
+        car.nitroFX.add(car.nitroLight);
       }
       car.nitroFX.visible = false;
       car.mesh.add(car.nitroFX);
@@ -483,6 +511,9 @@ export class Traffic {
         car.nitroFX.visible = running && car.nitroActive;
         if (car.nitroFX.visible) {
           const time = performance.now() * 0.001;
+          const pulse = 0.94 + Math.sin(time * 23 + i) * 0.08;
+          car.nitroGlow.scale.set(1.15 * pulse, 0.72 * pulse, 1);
+          car.nitroLight.intensity = 0.72 + pulse * 0.28;
           for (let flame = 0; flame < car.nitroFlames.length; flame++) {
             const flicker = 0.9 + Math.sin(time * 29 + i * 2.1 + flame) * 0.12;
             car.nitroFlames[flame].scale.set(flicker, flicker, 0.88 + flicker * 0.22);
