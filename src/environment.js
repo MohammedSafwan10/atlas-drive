@@ -209,7 +209,8 @@ function makeTreeCard(texture, widthRatio = 2 / 3) {
   const front = new THREE.Mesh(geometry, material);
   const side = new THREE.Mesh(geometry, material);
   side.rotation.y = Math.PI / 2;
-  front.castShadow = side.castShadow = true;
+  front.castShadow = side.castShadow = false;
+  front.receiveShadow = side.receiveShadow = false;
   tree.add(front, side);
   return tree;
 }
@@ -318,19 +319,12 @@ export class Environment {
       return pool;
     };
 
-    // Lightweight crossed cards remain only in the distance. Nearby silhouettes
-    // are supplied by several optimized 3D species below.
-    if (IS_MOBILE) {
-      // Each crossed-card tree becomes one merged geometry and one instanced
-      // draw call. This replaces dozens of individual transparent meshes.
-      treePrototypes.forEach((prototype) => {
-        const mergedTree = mergeStaticModel(prototype);
-        this._makeInstancedPool(mergedTree, 12, 8.5, 14, 30, 74, { widthScale: 1 });
-      });
-      this.trees = [];
-    } else {
-      this.trees = makePool(treePrototypes, 48, 8.5, 14, 30, 74);
-    }
+    // Lightweight instanced crossed cards eliminate hundreds of draw calls.
+    treePrototypes.forEach((prototype) => {
+      const mergedTree = mergeStaticModel(prototype);
+      this._makeInstancedPool(mergedTree, IS_MOBILE ? 12 : 24, 8.5, 14, 30, 74, { widthScale: 1 });
+    });
+    this.trees = [];
 
     Promise.all([
       loadModel(loader, MODEL_URLS.boulder),
@@ -346,25 +340,20 @@ export class Environment {
       const ferns = fern ? [fern] : [];
       const grasses = grass ? [mergeStaticModel(grass)] : [];
       const realTrees = [pineTree, islandTree, jacarandaTree].filter(Boolean);
-      boulders.forEach((model) => configurePBR(model));
-      rocks.forEach((model) => configurePBR(model));
-      ferns.forEach((model) => configurePBR(model, { foliage: true }));
+      boulders.forEach((model) => configurePBR(model, { shadows: false }));
+      rocks.forEach((model) => configurePBR(model, { shadows: false }));
+      ferns.forEach((model) => configurePBR(model, { shadows: false, foliage: true }));
       grasses.forEach((model) => configurePBR(model, { shadows: false, foliage: true }));
-      realTrees.forEach((model) => {
-        configurePBR(model, { shadows: false, foliage: true });
-        model.traverse((object) => {
-          if (object.isMesh) object.receiveShadow = true;
-        });
-      });
+      realTrees.forEach((model) => configurePBR(model, { shadows: false, foliage: true }));
 
       // A few true 3D species near the road greatly improve silhouettes;
-      // crossed-card trees remain in the distance to keep draw cost bounded.
-      this.trees.push(...makePool(realTrees, IS_MOBILE ? 3 : 9, 8, 14.5, 16, 45));
+      // crossed-card trees remain instanced to keep draw calls ultra-low.
+      this.trees.push(...makePool(realTrees, IS_MOBILE ? 3 : 8, 8, 14.5, 16, 45));
 
       this.props = [
-        ...makePool(boulders, scaledCount(20, 7), 1.4, 2.8, 13, 42),
-        ...makePool(rocks, scaledCount(34, 12), 0.45, 1.15, 10, 25),
-        ...makePool(ferns, scaledCount(42, 14), 0.55, 1.05, 12, 30),
+        ...makePool(boulders, scaledCount(14, 6), 1.4, 2.8, 13, 42),
+        ...makePool(rocks, scaledCount(24, 10), 0.45, 1.15, 10, 25),
+        ...makePool(ferns, scaledCount(30, 12), 0.55, 1.05, 12, 30),
       ];
       if (grasses[0]) this._makeInstancedPool(grasses[0], scaledCount(72, 28), 0.3, 0.64, 13, 28);
 

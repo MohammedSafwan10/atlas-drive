@@ -4,8 +4,10 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { LANE_X } from './road.js';
 import { roadPitch, roadPoint, roadYaw, SEG_LEN } from './path.js';
 import { GRAPHICS, IS_MOBILE } from './platform.js';
-import { modeForSegment, rampSurfaceLift } from './features.js';
+import { modeForSegment, rampLips, rampSurfaceLift } from './features.js';
 import { RACE_DIFFICULTIES, RACE_DISTANCE, RACER_NAMES } from './race.js';
+
+const GRAVITY = 24;
 
 // AI traffic: pooled vehicles (real Ferrari GLB clones with varied paint) in lanes at varied speeds
 export const COLORS = [0x2878d4, 0x20a15a, 0xe0a126, 0x777777, 0x8a2f2f, 0x3f3f46, 0xb8b8b8, 0x292f52];
@@ -165,6 +167,7 @@ export class Traffic {
         mistakeTimer: 0, mistakeCooldown: 0, headlightBeams: [],
         raceElapsed: 0, targetX: 0, lateralVelocity: 0, tacticalState: 'RACING_LINE',
         hasCollided: false,
+        airborne: false, airY: 0, airVy: 0, airTime: 0,
       };
       this.cars.push(carEntry);
       attachHeadlightBeams(carEntry, i < 3);
@@ -266,19 +269,52 @@ export class Traffic {
 
     for (const car of this.cars) {
       if (!car.mesh.visible) continue;
+      const carX = LANE_X[car.lane];
+
+      // Ramp launch check for endless traffic
+      if (!car.airborne && car.speed > 12 && Math.abs(carX) < 3.4) {
+        const lip = car.z - car.speed * dt;
+        const k = Math.round(lip / SEG_LEN);
+        if (modeForSegment(k) === 'ramp') {
+          for (const edge of rampLips(k)) {
+            if (car.z >= edge && lip < edge) {
+              car.airborne = true;
+              car.airTime = 0;
+              car.airY = Math.max(car.airY || 0, 1.35);
+              car.airVy = 3.6 + car.speed * 0.085;
+              break;
+            }
+          }
+        }
+      }
+      if (car.airborne) {
+        car.airTime += dt;
+        car.airY += car.airVy * dt;
+        car.airVy -= GRAVITY * dt;
+        if (car.airY <= 0 && car.airVy < 0) {
+          car.airY = 0;
+          car.airborne = false;
+        }
+      }
+
       car.z -= car.speed * dt; // traffic drives toward -Z, same direction as player
-      roadPoint(car.z, LANE_X[car.lane], 0, car.mesh.position);
-      car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
+      const surfaceLift = car.airborne || Math.abs(carX) >= 3.4 ? 0 : rampSurfaceLift(car.z);
+      roadPoint(car.z, carX, (car.airY || 0) + surfaceLift, car.mesh.position);
+      const airPitch = car.airborne ? -Math.atan2(car.airVy, Math.max(20, car.speed)) * 0.55 : 0;
+      car.mesh.rotation.set(roadPitch(car.z) + airPitch, roadYaw(car.z), 0);
 
       // Despawn behind
       if (car.z > playerZ + 40) {
         car.mesh.visible = false;
+        car.airborne = false;
+        car.airY = 0;
+        car.airVy = 0;
         car.z = -9999;
         car.mesh.position.set(0, -100, -9999);
         continue;
       }
 
-      const dx = Math.abs(LANE_X[car.lane] - playerX);
+      const dx = Math.abs(carX - playerX);
       const dz = Math.abs(car.z - playerZ);
 
       // Collision (AABB)
@@ -288,7 +324,7 @@ export class Traffic {
           // Propel hit traffic car forward so player doesn't remain trapped
           car.speed = Math.max(car.speed, 35);
           car.z -= 28;
-          roadPoint(car.z, LANE_X[car.lane], 0, car.mesh.position);
+          roadPoint(car.z, carX, 0, car.mesh.position);
           onCrash();
         }
       }
@@ -308,6 +344,10 @@ export class Traffic {
       car.racerIndex = -1;
       car.nitroActive = false;
       car.hasCollided = false;
+      car.airborne = false;
+      car.airY = 0;
+      car.airVy = 0;
+      car.airTime = 0;
       car.z = -9999;
       car.mesh.position.set(0, -100, -9999);
       if (car.nitroFX) car.nitroFX.visible = false;
@@ -376,6 +416,10 @@ export class Traffic {
       car.targetX = car.x;
       car.lateralVelocity = 0;
       car.tacticalState = 'RACING_LINE';
+      car.airborne = false;
+      car.airY = 0;
+      car.airVy = 0;
+      car.airTime = 0;
       const lift = Math.abs(car.x) < 3.4 ? rampSurfaceLift(car.z) : 0;
       roadPoint(car.z, car.x, lift, car.mesh.position);
       car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
@@ -559,11 +603,39 @@ export class Traffic {
         if (-car.z >= RACE_DISTANCE) car.finished = true;
       }
 
-      const lift = Math.abs(car.x) < 3.4 ? rampSurfaceLift(car.z) : 0;
-      roadPoint(car.z, car.x, lift, car.mesh.position);
+      // Ramp launch check for race rivals
+      if (!car.airborne && car.speed > 12 && Math.abs(car.x) < 3.4) {
+        const lip = car.z - car.speed * dt;
+        const k = Math.round(lip / SEG_LEN);
+        if (modeForSegment(k) === 'ramp') {
+          for (const edge of rampLips(k)) {
+            if (car.z >= edge && lip < edge) {
+              car.airborne = true;
+              car.airTime = 0;
+              car.airY = Math.max(car.airY || 0, 1.35);
+              car.airVy = 4.0 + car.speed * 0.095;
+              car.nitroAmount = Math.min(1, car.nitroAmount + 0.2);
+              break;
+            }
+          }
+        }
+      }
+      if (car.airborne) {
+        car.airTime += dt;
+        car.airY += car.airVy * dt;
+        car.airVy -= GRAVITY * dt;
+        if (car.airY <= 0 && car.airVy < 0) {
+          car.airY = 0;
+          car.airborne = false;
+        }
+      }
+
+      const surfaceLift = car.airborne || Math.abs(car.x) >= 3.4 ? 0 : rampSurfaceLift(car.z);
+      roadPoint(car.z, car.x, (car.airY || 0) + surfaceLift, car.mesh.position);
       const steerYaw = clamp(car.lateralVelocity * -0.012, -0.055, 0.055);
       const bodyRoll = clamp(car.lateralVelocity * -0.008, -0.035, 0.035);
-      car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z) + steerYaw, bodyRoll);
+      const airPitch = car.airborne ? -Math.atan2(car.airVy, Math.max(20, car.speed)) * 0.55 : 0;
+      car.mesh.rotation.set(roadPitch(car.z) + airPitch, roadYaw(car.z) + steerYaw, bodyRoll);
 
       if (car.nitroFX) {
         car.nitroFX.visible = running && car.nitroActive;
