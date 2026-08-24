@@ -381,12 +381,8 @@ function tick() {
   }
 
   if (state === 'playing') {
-    if (invulnerable > 0) {
-      invulnerable -= dt;
-      car.group.visible = Math.floor(invulnerable * 14) % 2 === 0;
-    } else {
-      car.group.visible = true;
-    }
+    if (invulnerable > 0) invulnerable -= dt;
+    car.group.visible = true;
 
     car.update(dt, input);
     car.z -= car.speed * dt;
@@ -452,16 +448,17 @@ function tick() {
     const targetLook = roadPoint(car.z - (IS_MOBILE ? 15 : 14), car.x * 0.82, 0.95);
     camPos.copy(targetPos);
     camLook.copy(targetLook);
+
+    // Apply impact impulse smoothly to camera position before projection
+    if (impactShake > 0) {
+      impactShake = Math.max(0, impactShake - dt);
+      const strength = Math.min(1, impactShake / 0.22) * 0.12;
+      camPos.x += (Math.random() - 0.5) * strength;
+      camPos.y += (Math.random() - 0.5) * strength;
+    }
+
     camera.position.copy(camPos);
     camera.lookAt(camLook);
-  }
-
-  // Short impact impulse only—never an endless post-crash vibration.
-  if (impactShake > 0) {
-    impactShake = Math.max(0, impactShake - dt);
-    const strength = Math.min(1, impactShake / 0.22) * 0.095;
-    camera.position.x += (Math.random() - 0.5) * strength;
-    camera.position.y += (Math.random() - 0.5) * strength;
   }
 
   hud.update(car, score);

@@ -105,11 +105,11 @@ export class HUD {
   }
 
   crashFlash() {
-    this.flashEl.getAnimations().forEach((animation) => animation.cancel());
-    this.flashEl.animate(
-      [{ opacity: 0.58 }, { opacity: 0 }],
-      { duration: 260, easing: 'ease-out' },
-    );
+    this.flashEl.style.opacity = '0.55';
+    clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => {
+      this.flashEl.style.opacity = '0';
+    }, 120);
   }
 
   showStart() {
