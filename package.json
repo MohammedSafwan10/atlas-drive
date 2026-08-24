@@ -1,8 +1,8 @@
 {
-  "name": "turbo-highway-3d",
+  "name": "atlas-drive",
   "private": true,
   "version": "1.0.0",
-  "description": "A Three.js alpine highway driving game with curved terrain, traffic, and nitro.",
+  "description": "A cinematic Three.js racing game featuring Alpine Pass, tactical rivals, dynamic weather, and nitro.",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",

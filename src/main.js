@@ -140,7 +140,7 @@ function selectDifficulty(difficulty) {
   if (!['easy', 'normal', 'hard'].includes(difficulty)) return;
   raceDifficulty = difficulty;
   hud.setDifficulty(difficulty);
-  try { localStorage.setItem('turbo-race-difficulty', difficulty); } catch { /* storage may be disabled */ }
+  try { localStorage.setItem('atlas-drive-race-difficulty', difficulty); } catch { /* storage may be disabled */ }
   audio.ui(difficulty === 'hard' ? 760 : difficulty === 'easy' ? 480 : 620);
 }
 
@@ -246,7 +246,7 @@ function finishRace() {
   car.nitroActive = false;
   input.clearAll();
   hud.showCountdown('');
-  const recordKey = `turbo-best-${raceDifficulty}`;
+  const recordKey = `atlas-drive-best-${raceDifficulty}`;
   let previousBest = Number.POSITIVE_INFINITY;
   try { previousBest = Number(localStorage.getItem(recordKey)) || Number.POSITIVE_INFINITY; } catch { /* storage may be disabled */ }
   const isRecord = raceTime < previousBest;
@@ -467,17 +467,17 @@ function tick() {
 
 hud.setMode('endless');
 try {
-  selectDifficulty(localStorage.getItem('turbo-race-difficulty') || 'normal');
+  selectDifficulty(localStorage.getItem('atlas-drive-race-difficulty') || 'normal');
 } catch {
   hud.setDifficulty(raceDifficulty);
 }
 try {
-  selectTime(localStorage.getItem('turbo-time-mode') || 'auto');
+  selectTime(localStorage.getItem('atlas-drive-time-mode') || 'auto');
 } catch {
   hud.setTimeMode('auto');
 }
 try {
-  selectWeather(previewParams.get('weather') || localStorage.getItem('turbo-weather-mode') || 'auto');
+  selectWeather(previewParams.get('weather') || localStorage.getItem('atlas-drive-weather-mode') || 'auto');
 } catch {
   hud.setWeatherMode('auto');
 }

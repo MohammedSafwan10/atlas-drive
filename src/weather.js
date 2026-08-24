@@ -170,7 +170,7 @@ export class WeatherSystem {
       // lightning remains irregular and cannot be predicted by the player.
       this.lightningTimer = Math.min(this.lightningTimer, 2.8 + Math.random() * 2.2);
     }
-    try { localStorage.setItem('turbo-weather-mode', this.mode); } catch { /* optional preference */ }
+    try { localStorage.setItem('atlas-drive-weather-mode', this.mode); } catch { /* optional preference */ }
   }
 
   forceLightning(delay = 1.8) {

@@ -104,7 +104,7 @@ export class TimeOfDay {
     } else {
       this.transition = null;
     }
-    try { localStorage.setItem('turbo-time-mode', this.mode); } catch { /* optional preference */ }
+    try { localStorage.setItem('atlas-drive-time-mode', this.mode); } catch { /* optional preference */ }
   }
 
   update(dt) {

@@ -1,8 +1,14 @@
-# Turbo Highway 3D
+# Atlas Drive
 
-A fast, browser-based 3D highway driving game built with Three.js. Compete in a four-car alpine sprint or dodge traffic in endless mode, use nitro, and chase a high score in a detailed PBR environment.
+A cinematic browser and Android racing game built with Three.js. Race tactical rivals across the 6 km Alpine Pass or dodge traffic in Endless Highway while dynamic time, storms, wet roads, nitro and a detailed PBR environment transform every run.
 
-![Turbo Highway 3D gameplay](docs/gameplay.png)
+![Atlas Drive gameplay](docs/gameplay.png)
+
+## Gameplay
+
+The repository includes the screenshot above as its current visual preview. A full gameplay video can be attached here without adding a large binary to the Git history: open `README.md` on GitHub, choose **Edit**, drag the final MP4 directly below this paragraph, and commit the generated video link.
+
+<!-- GAMEPLAY_VIDEO: Drag the final MP4 into GitHub's README editor here. GitHub will generate a user-attachments URL and an embedded player. -->
 
 ## Highlights
 
@@ -20,6 +26,10 @@ A fast, browser-based 3D highway driving game built with Three.js. Compete in a 
 - Traffic, near-miss scoring, three-life collision system, speedometer, nitro bar, and FPS counter
 - Reactive three-band engine audio, recorded CC0 rain and thunder variations, road/wind noise, nitro, impacts, and UI sounds
 - Instanced small vegetation and distance-aware scenery for better browser performance
+
+## Current world
+
+**Alpine Pass** is the first Atlas Drive location: a mountain route with open highway, bridges, tunnels, ramps, changing elevation and dynamic weather. The project name is intentionally location-neutral so future city, coastal, desert and winter routes can share the same game systems.
 
 ## Run locally
 

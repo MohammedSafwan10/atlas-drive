@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.mohammedsafwan.turbohighway"
+    namespace = "com.mohammedsafwan.atlasdrive"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.mohammedsafwan.turbohighway"
+        applicationId "com.mohammedsafwan.atlasdrive"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

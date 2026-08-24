@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Turbo Highway 3D</string>
-    <string name="title_activity_main">Turbo Highway 3D</string>
-    <string name="package_name">com.mohammedsafwan.turbohighway</string>
-    <string name="custom_url_scheme">com.mohammedsafwan.turbohighway</string>
+    <string name="app_name">Atlas Drive</string>
+    <string name="title_activity_main">Atlas Drive</string>
+    <string name="package_name">com.mohammedsafwan.atlasdrive</string>
+    <string name="custom_url_scheme">com.mohammedsafwan.atlasdrive</string>
 </resources>
