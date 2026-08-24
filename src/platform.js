@@ -21,7 +21,7 @@ export const GRAPHICS = Object.freeze({
   skyWidthSegments: IS_MOBILE ? 24 : 48,
   skyHeightSegments: IS_MOBILE ? 12 : 24,
   sceneryScale: IS_MOBILE ? 0.42 : 1,
-  trafficCount: IS_MOBILE ? 4 : 12,
+  trafficCount: 5,
   particleCount: IS_MOBILE ? 120 : 400,
 });
 

@@ -83,10 +83,11 @@ export class Traffic {
       depthWrite: false, depthTest: true,
     });
 
-    const attachHeadlightBeams = (car) => {
+    const attachHeadlightBeams = (car, isRacer = false) => {
       car.headlightBeams = [];
-      // Race rivals need real road illumination, not merely glowing lens meshes.
-      // Two unshadowed spots are inexpensive; mobile disables distant beams.
+      // Only the 3 tactical rivals in Sprint Race mode need real road spot illumination.
+      // Highway traffic cars use high-intensity glowing emissive lens meshes (0ms GPU cost).
+      if (!isRacer) return;
       for (const lx of [-0.56, 0.56]) {
         const beam = new THREE.SpotLight(0xffedcf, 0, IS_MOBILE ? 30 : 40, 0.31, 0.72, 1.45);
         beam.position.set(lx, 0.7, -2.05);
@@ -166,7 +167,7 @@ export class Traffic {
         hasCollided: false,
       };
       this.cars.push(carEntry);
-      attachHeadlightBeams(carEntry);
+      attachHeadlightBeams(carEntry, i < 3);
       attachNitroFX(carEntry);
     }
     this.spawnTimer = 0;
@@ -185,7 +186,7 @@ export class Traffic {
       for (let i = 0; i < this.cars.length; i++) {
         const car = this.cars[i];
         const model = template.clone(true);
-        model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
 
         const paint = new THREE.MeshPhysicalMaterial({
           color: COLORS[i % COLORS.length], metalness: 1.0, roughness: 0.5,
@@ -207,7 +208,7 @@ export class Traffic {
           lens.position.set(lx, 0.72, -2.16);
           car.mesh.add(lens);
         }
-        attachHeadlightBeams(car);
+        attachHeadlightBeams(car, i < 3);
         attachNitroFX(car);
       }
       draco.dispose();
