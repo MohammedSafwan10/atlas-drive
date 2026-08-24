@@ -18,6 +18,7 @@ export class HUD {
     this.nearMissEl = document.getElementById('nearmiss');
     this.flashEl = document.getElementById('flash');
     this.startScreen = document.getElementById('start-screen');
+    this.raceSetupScreen = document.getElementById('race-setup-screen');
     this.gameoverScreen = document.getElementById('gameover-screen');
     this.pauseScreen = document.getElementById('pause-screen');
     this.pauseButton = document.getElementById('pause-btn');
@@ -38,6 +39,7 @@ export class HUD {
     this.finalScoreEl = document.getElementById('final-score');
     this.livesEl = document.getElementById('lives');
     this.fpsEl = document.getElementById('fps');
+    this.timeIndicator = document.getElementById('time-indicator');
 
     this.nearMissTimer = null;
     this.fpsFrames = 0;
@@ -46,9 +48,11 @@ export class HUD {
     this._buildMinimapBase();
   }
 
-  bind({ startEndless, startRace, restart, pause, resume, menu, selectDifficulty }) {
+  bind({ startEndless, startRace, openRaceSetup, closeRaceSetup, restart, pause, resume, menu, selectDifficulty, selectTime, cycleTime }) {
     document.getElementById('start-endless-btn').addEventListener('click', startEndless);
-    document.getElementById('start-race-btn').addEventListener('click', startRace);
+    document.getElementById('start-race-btn').addEventListener('click', openRaceSetup);
+    document.getElementById('confirm-race-btn').addEventListener('click', startRace);
+    document.getElementById('setup-back-btn').addEventListener('click', closeRaceSetup);
     document.getElementById('restart-btn').addEventListener('click', restart);
     document.getElementById('pause-restart-btn').addEventListener('click', restart);
     document.getElementById('race-again-btn').addEventListener('click', startRace);
@@ -58,6 +62,10 @@ export class HUD {
     for (const button of document.querySelectorAll('.difficulty-btn')) {
       button.addEventListener('click', () => selectDifficulty(button.dataset.difficulty));
     }
+    for (const button of document.querySelectorAll('.time-btn')) {
+      button.addEventListener('click', () => selectTime(button.dataset.time));
+    }
+    this.timeIndicator.addEventListener('click', cycleTime);
   }
 
   update(car, score) {
@@ -101,6 +109,8 @@ export class HUD {
 
   showStart() {
     this.startScreen.style.display = 'flex';
+    this.raceSetupScreen.style.display = 'none';
+    this.timeIndicator.style.display = 'none';
     this.gameoverScreen.style.display = 'none';
     this.raceResultsScreen.style.display = 'none';
     this.countdownEl.style.display = 'none';
@@ -109,6 +119,19 @@ export class HUD {
 
   hideStart() {
     this.startScreen.style.display = 'none';
+    this.raceSetupScreen.style.display = 'none';
+    this.timeIndicator.style.display = 'block';
+  }
+
+  showRaceSetup() {
+    this.startScreen.style.display = 'none';
+    this.raceSetupScreen.style.display = 'flex';
+    this.timeIndicator.style.display = 'none';
+  }
+
+  hideRaceSetup() {
+    this.raceSetupScreen.style.display = 'none';
+    this.startScreen.style.display = 'flex';
   }
 
   showGameOver(score) {
@@ -146,6 +169,16 @@ export class HUD {
       button.classList.toggle('active', button.dataset.difficulty === resolved);
     }
     this.raceMetaEl.textContent = `${RACE_ROUTE_NAME} · ${RACE_DIFFICULTIES[resolved].label}`;
+  }
+
+  setTimeMode(mode) {
+    for (const button of document.querySelectorAll('.time-btn')) {
+      button.classList.toggle('active', button.dataset.time === mode);
+    }
+  }
+
+  updateTime(profile, mode) {
+    this.timeIndicator.textContent = `${profile.icon} ${profile.label}${mode === 'auto' ? ' · AUTO' : ''}`;
   }
 
   showCountdown(value) {

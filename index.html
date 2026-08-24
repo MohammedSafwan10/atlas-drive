@@ -112,6 +112,28 @@
       color: #aebdca; font: 700 11px/1 'Segoe UI', sans-serif; letter-spacing: 0.8px;
     }
     .difficulty-btn.active { color: #fff; border-color: #28baff; background: rgba(27,151,224,0.35); }
+    .time-setup { border-color: rgba(255,181,83,0.28); }
+    .time-options { display: flex; gap: 5px; }
+    .time-btn {
+      pointer-events: auto; cursor: pointer; padding: 7px 9px; border-radius: 7px;
+      border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.055);
+      color: #aebdca; font: 700 10px/1 'Segoe UI', sans-serif; letter-spacing: 0.65px;
+    }
+    .time-btn.active { color: #fff4da; border-color: #ffb54f; background: rgba(190,107,28,0.34); }
+    .menu-subtitle { margin-top: -7px; color: #94a9bd; font-size: 13px; letter-spacing: 1.4px; text-transform: uppercase; }
+    .controls-hint { margin-top: 4px; color: #72869a; font-size: 11px; letter-spacing: 0.6px; }
+    .setup-panel {
+      width: min(520px, calc(100vw - 36px)); padding: 24px; border-radius: 18px;
+      background: linear-gradient(155deg, rgba(14,24,36,0.96), rgba(5,10,17,0.96));
+      border: 1px solid rgba(78,186,242,0.3); box-shadow: 0 24px 70px rgba(0,0,0,0.48);
+    }
+    .setup-header { text-align: left; margin-bottom: 16px; }
+    .setup-header .eyebrow { color: #38bdf8; font-size: 11px; font-weight: 800; letter-spacing: 2px; }
+    .setup-header h2 { margin: 5px 0 2px; font-size: 30px; letter-spacing: 1.5px; }
+    .setup-header p { color: #90a5b8; font-size: 12px; }
+    .setup-panel .race-setup { justify-content: space-between; margin-top: 9px; }
+    .setup-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 16px; }
+    .btn.secondary { background: rgba(255,255,255,0.08); box-shadow: none; border: 1px solid rgba(255,255,255,0.14); }
 
     #race-hud {
       display: none; position: absolute; top: 18px; left: 22px; min-width: 148px;
@@ -192,6 +214,13 @@
       background: rgba(10,14,20,0.66); color: #fff;
       font-size: 17px; pointer-events: auto; cursor: pointer;
     }
+    #time-indicator {
+      position: absolute; top: 18px; left: calc(50% - 106px); min-width: 126px;
+      height: 38px; padding: 0 12px; border-radius: 10px;
+      border: 1px solid rgba(255,194,100,0.28); background: rgba(10,14,20,0.66);
+      color: #ffe2a8; font-size: 10px; font-weight: 800; letter-spacing: 1px;
+      pointer-events: auto; cursor: pointer;
+    }
 
     /* Move HUD widgets out of the way of touch buttons */
     body.touch .nitro-wrap { bottom: 118px; left: 18px; width: 180px; }
@@ -247,6 +276,10 @@
       top: max(10px, env(safe-area-inset-top)); left: calc(50% + 112px);
       width: 34px; height: 34px; border-radius: 9px; font-size: 14px;
     }
+    body.touch #time-indicator {
+      top: 50px; left: 50%; transform: translateX(-50%); min-width: 104px;
+      height: 27px; padding: 0 8px; font-size: 8px; border-radius: 8px;
+    }
     body.touch .nitro-wrap {
       bottom: max(76px, calc(env(safe-area-inset-bottom) + 70px));
       left: max(10px, env(safe-area-inset-left)); width: 132px;
@@ -270,6 +303,13 @@
     body.touch .route-chip { font-size: 9px; }
     body.touch .route-chip strong { font-size: 10px; }
     body.touch .difficulty-btn { padding: 6px 8px; font-size: 9px; }
+    body.touch .time-btn { padding: 5px 6px; font-size: 8px; }
+    body.touch .setup-panel { padding: 13px 15px; width: min(620px, calc(100vw - 36px)); }
+    body.touch .setup-header { margin-bottom: 7px; }
+    body.touch .setup-header h2 { font-size: 20px; margin: 2px 0; }
+    body.touch .setup-header p, body.touch .controls-hint { font-size: 9px; }
+    body.touch .setup-panel .race-setup { margin-top: 6px; }
+    body.touch .setup-actions { margin-top: 8px; }
     body.touch #race-hud {
       top: max(8px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left));
       min-width: 105px; padding: 6px 9px; border-radius: 8px;
@@ -336,33 +376,53 @@
 
     <button id="pause-btn" aria-label="Pause game">Ⅱ</button>
     <button id="sound-btn" aria-label="Mute game audio">🔊</button>
+    <button id="time-indicator" aria-label="Change time of day">☀ DAY · AUTO</button>
 
     <div id="start-screen" class="overlay">
       <h1>TURBO HIGHWAY 3D</h1>
-      <p>
-        <span class="key">W</span>/<span class="key">↑</span> accelerate &nbsp;·&nbsp;
-        <span class="key">S</span>/<span class="key">↓</span> brake &nbsp;·&nbsp;
-        <span class="key">A</span><span class="key">D</span>/<span class="key">←</span><span class="key">→</span> steer<br/>
-        <span class="key">Shift</span> nitro &nbsp;·&nbsp; <span class="key">P</span> pause &nbsp;·&nbsp; <span class="key">M</span> mute<br/>
-        <em style="font-size:13px;color:#8fa3b8;">On touch devices: on-screen pedals + arrows, or enable TILT STEER</em>
-      </p>
-      <div class="race-setup" aria-label="Race setup">
-        <div class="route-chip"><strong>ALPINE PASS</strong>6.0 km · 6 sectors</div>
-        <div class="difficulty-options" aria-label="AI difficulty">
-          <button class="difficulty-btn" data-difficulty="easy">ROOKIE</button>
-          <button class="difficulty-btn active" data-difficulty="normal">SPORT</button>
-          <button class="difficulty-btn" data-difficulty="hard">PRO</button>
-        </div>
-      </div>
+      <div class="menu-subtitle">Choose your drive</div>
       <div class="mode-buttons">
         <button id="start-race-btn" class="mode-card primary">
           <strong>4-CAR SPRINT</strong>
-          <span>6 km mountain race · tactical rivals · minimap · checkpoints</span>
+          <span>Race three tactical rivals across Alpine Pass</span>
         </button>
         <button id="start-endless-btn" class="mode-card">
           <strong>ENDLESS HIGHWAY</strong>
           <span>Traffic dodging · 3 lives · score attack</span>
         </button>
+      </div>
+      <div class="controls-hint">WASD / ARROWS drive &nbsp;·&nbsp; SHIFT nitro &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M sound</div>
+    </div>
+
+    <div id="race-setup-screen" class="overlay" style="display:none">
+      <div class="setup-panel">
+        <div class="setup-header">
+          <div class="eyebrow">4-CAR SPRINT</div>
+          <h2>ALPINE PASS</h2>
+          <p>6.0 km · 6 sectors · 3 tactical rivals</p>
+        </div>
+        <div class="race-setup" aria-label="Race difficulty">
+          <div class="route-chip"><strong>DIFFICULTY</strong>Rival skill and aggression</div>
+          <div class="difficulty-options" aria-label="AI difficulty">
+            <button class="difficulty-btn" data-difficulty="easy">ROOKIE</button>
+            <button class="difficulty-btn active" data-difficulty="normal">SPORT</button>
+            <button class="difficulty-btn" data-difficulty="hard">PRO</button>
+          </div>
+        </div>
+        <div class="race-setup time-setup" aria-label="Time of day">
+          <div class="route-chip"><strong>TIME</strong>Dynamic lighting</div>
+          <div class="time-options">
+            <button class="time-btn active" data-time="auto">AUTO</button>
+            <button class="time-btn" data-time="morning">AM</button>
+            <button class="time-btn" data-time="day">DAY</button>
+            <button class="time-btn" data-time="sunset">DUSK</button>
+            <button class="time-btn" data-time="night">NIGHT</button>
+          </div>
+        </div>
+        <div class="setup-actions">
+          <button id="setup-back-btn" class="btn secondary">BACK</button>
+          <button id="confirm-race-btn" class="btn">START RACE</button>
+        </div>
       </div>
     </div>
 

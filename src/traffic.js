@@ -28,6 +28,7 @@ export class Traffic {
     const tlGeo = new THREE.BoxGeometry(0.45, 0.12, 0.06);
     const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 14);
     wheelGeo.rotateZ(Math.PI / 2);
+    this.headlightMaterial = hlMat;
 
     for (let i = 0; i < GRAPHICS.trafficCount; i++) {
       const color = COLORS[i % COLORS.length];
@@ -100,6 +101,11 @@ export class Traffic {
 
         car.mesh.clear();
         car.mesh.add(model);
+        for (const lx of [-0.61, 0.61]) {
+          const lens = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.075, 0.035), this.headlightMaterial);
+          lens.position.set(lx, 0.72, -2.16);
+          car.mesh.add(lens);
+        }
       }
       draco.dispose();
     }, undefined, () => draco.dispose());
@@ -161,6 +167,11 @@ export class Traffic {
       car.mesh.visible = false;
       car.racerIndex = -1;
     }
+  }
+
+  setNightFactor(factor) {
+    const night = THREE.MathUtils.clamp(factor, 0, 1);
+    this.headlightMaterial.emissiveIntensity = 0.45 + night * 5.2;
   }
 
   resetRace(difficulty = 'normal') {

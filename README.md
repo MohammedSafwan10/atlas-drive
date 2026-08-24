@@ -12,6 +12,7 @@ A fast, browser-based 3D highway driving game built with Three.js. Compete in a 
 - Uneven 3D terrain with gravel shoulders, drainage ditches, guardrails, fences, reflectors, signs, and utility poles
 - Three distinct tree species plus rocks, ferns, bushes, grass, and wildflowers
 - PBR asphalt and terrain materials, HDR environment lighting, alpine panorama, shadows, fog, bloom, and cinematic color grading
+- Dynamic eight-minute day cycle with matched morning, daytime, sunset, twilight, and starry-night lighting plus manual overrides
 - Detailed player car with working brake lights, rotating tires, nitro effects, and contact shadow
 - Traffic, near-miss scoring, three-life collision system, speedometer, nitro bar, and FPS counter
 - Reactive three-band engine audio, road/wind noise, nitro, impacts, and UI sounds

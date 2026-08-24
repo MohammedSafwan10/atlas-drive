@@ -295,6 +295,7 @@ export class Road {
         metalness: 0.05,
       }),
     };
+    this.materials = materials;
 
     for (let i = 0; i < SEG_COUNT; i++) {
       const segment = { centerZ: -i * SEG_LEN, ribbons: [], fixtures: [] };
@@ -454,6 +455,14 @@ export class Road {
       this.segments.push(segment);
       this._updateSegment(segment, segment.centerZ);
     }
+  }
+
+  setNightFactor(factor) {
+    const night = THREE.MathUtils.clamp(factor, 0, 1);
+    this.materials.lamp.emissiveIntensity = 0.28 + night * 5.4;
+    this.materials.reflector.emissiveIntensity = 1.2 + night * 4.2;
+    this.materials.sign.emissiveIntensity = 0.35 + night * 1.35;
+    this.materials.line.emissiveIntensity = 0.28 + night * 0.72;
   }
 
   _updateSegment(segment, centerZ) {

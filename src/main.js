@@ -12,9 +12,10 @@ import { IS_MOBILE } from './platform.js';
 import { GameAudio } from './audio.js';
 import { modeForSegment } from './features.js';
 import { RaceCourse, RACE_CHECKPOINTS, RACE_DISTANCE } from './race.js';
+import { TimeOfDay, TIME_MODES } from './timeOfDay.js';
 
 const canvas = document.getElementById('game');
-const { renderer, scene, camera, update: updateScene, updatePerformance } = createScene(canvas);
+const { renderer, scene, camera, update: updateScene, updatePerformance, setTimeOfDay } = createScene(canvas);
 
 const road = new Road(scene);
 const environment = new Environment(scene);
@@ -25,6 +26,7 @@ const effects = new Effects(scene, camera, car);
 const hud = new HUD();
 const input = new Input();
 const audio = new GameAudio();
+const timeOfDay = new TimeOfDay(setTimeOfDay);
 const previewParams = new URLSearchParams(location.search);
 const previewZ = import.meta.env.DEV
   ? Number(previewParams.get('previewZ'))
@@ -35,6 +37,7 @@ let state = 'start'; // start | countdown | playing | paused | crashed | finishe
 let stateBeforePause = 'playing';
 let gameMode = 'race'; // race | endless
 let raceDifficulty = 'normal';
+let menuInSetup = false;
 let score = 0;
 let lives = 3;
 const MAX_LIVES = 3;
@@ -81,6 +84,7 @@ function resetCommon() {
 }
 
 function startEndless() {
+  menuInSetup = false;
   gameMode = 'endless';
   resetCommon();
   traffic.reset();
@@ -92,6 +96,7 @@ function startEndless() {
 }
 
 function startRace() {
+  menuInSetup = false;
   gameMode = 'race';
   resetCommon();
   car.x = 0;
@@ -107,12 +112,37 @@ function startRace() {
   audio.ui(440);
 }
 
+function openRaceSetup() {
+  if (state !== 'start') return;
+  menuInSetup = true;
+  hud.showRaceSetup();
+  audio.ui(560);
+}
+
+function closeRaceSetup() {
+  if (state !== 'start') return;
+  menuInSetup = false;
+  hud.hideRaceSetup();
+  audio.ui(420);
+}
+
 function selectDifficulty(difficulty) {
   if (!['easy', 'normal', 'hard'].includes(difficulty)) return;
   raceDifficulty = difficulty;
   hud.setDifficulty(difficulty);
   try { localStorage.setItem('turbo-race-difficulty', difficulty); } catch { /* storage may be disabled */ }
   audio.ui(difficulty === 'hard' ? 760 : difficulty === 'easy' ? 480 : 620);
+}
+
+function selectTime(mode) {
+  timeOfDay.setMode(mode);
+  hud.setTimeMode(timeOfDay.mode);
+  audio.ui(mode === 'night' ? 420 : mode === 'sunset' ? 540 : 660);
+}
+
+function cycleTime() {
+  const next = TIME_MODES[(TIME_MODES.indexOf(timeOfDay.mode) + 1) % TIME_MODES.length];
+  selectTime(next);
 }
 
 function restartGame() {
@@ -122,6 +152,7 @@ function restartGame() {
 
 function showMenu() {
   state = 'start';
+  menuInSetup = false;
   input.clearAll();
   car.speed = 0;
   traffic.reset();
@@ -208,15 +239,23 @@ function finishRace() {
 hud.bind({
   startEndless,
   startRace,
+  openRaceSetup,
+  closeRaceSetup,
   restart: restartGame,
   pause: pauseGame,
   resume: resumeGame,
   menu: showMenu,
   selectDifficulty,
+  selectTime,
+  cycleTime,
 });
 addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && (state === 'crashed' || state === 'finished')) restartGame();
-  if (e.code === 'Enter' && state === 'start') startRace();
+  if (e.code === 'Enter' && state === 'start') {
+    if (menuInSetup) startRace();
+    else openRaceSetup();
+  }
+  if (e.code === 'Escape' && state === 'start' && menuInSetup) closeRaceSetup();
   if ((e.code === 'Escape' || e.code === 'KeyP') && (state === 'playing' || state === 'countdown')) pauseGame();
   else if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'paused') resumeGame();
   if (e.code === 'KeyM') audio.toggleMute();
@@ -238,6 +277,11 @@ function tick() {
 
   if (suspended) return;
   updatePerformance(frameTime);
+  const timeProfile = timeOfDay.update(state === 'paused' ? 0 : dt);
+  road.setNightFactor(timeProfile.night);
+  car.setNightFactor(timeProfile.night);
+  traffic.setNightFactor(timeProfile.night);
+  hud.updateTime(timeProfile, timeOfDay.mode);
 
   if (state === 'countdown') {
     raceCountdown -= dt;
@@ -375,5 +419,10 @@ try {
   selectDifficulty(localStorage.getItem('turbo-race-difficulty') || 'normal');
 } catch {
   hud.setDifficulty(raceDifficulty);
+}
+try {
+  selectTime(localStorage.getItem('turbo-time-mode') || 'auto');
+} catch {
+  hud.setTimeMode('auto');
 }
 tick();

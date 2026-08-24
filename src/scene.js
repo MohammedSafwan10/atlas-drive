@@ -29,20 +29,54 @@ export function createScene(canvas) {
 
   // Use a sharp 6K photographic panorama for the visible sky/mountains, while
   // retaining the compact HDR file solely for image-based PBR lighting.
-  const backdrop = new THREE.TextureLoader().load('/assets/alps_field_4k.webp');
-  backdrop.mapping = THREE.EquirectangularReflectionMapping;
-  backdrop.colorSpace = THREE.SRGBColorSpace;
-  backdrop.minFilter = THREE.LinearMipmapLinearFilter;
-  backdrop.magFilter = THREE.LinearFilter;
+  const textureLoader = new THREE.TextureLoader();
+  const backdrops = [
+    textureLoader.load('/assets/alps_field_4k.webp'),
+    textureLoader.load('/assets/alps_field_sunset.webp'),
+    textureLoader.load('/assets/alps_field_night.webp'),
+  ];
+  for (const backdrop of backdrops) {
+    backdrop.mapping = THREE.EquirectangularReflectionMapping;
+    backdrop.colorSpace = THREE.SRGBColorSpace;
+    backdrop.minFilter = THREE.LinearMipmapLinearFilter;
+    backdrop.magFilter = THREE.LinearFilter;
+  }
+  const skyMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      dayMap: { value: backdrops[0] },
+      sunsetMap: { value: backdrops[1] },
+      nightMap: { value: backdrops[2] },
+      timeWeights: { value: new THREE.Vector3(1, 0, 0) },
+    },
+    vertexShader: `
+      varying vec2 vSkyUv;
+      void main() {
+        vSkyUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D dayMap;
+      uniform sampler2D sunsetMap;
+      uniform sampler2D nightMap;
+      uniform vec3 timeWeights;
+      varying vec2 vSkyUv;
+      void main() {
+        vec3 dayColor = timeWeights.x > 0.001 ? texture2D(dayMap, vSkyUv).rgb : vec3(0.0);
+        vec3 sunsetColor = timeWeights.y > 0.001 ? texture2D(sunsetMap, vSkyUv).rgb : vec3(0.0);
+        vec3 nightColor = timeWeights.z > 0.001 ? texture2D(nightMap, vSkyUv).rgb : vec3(0.0);
+        float total = max(0.001, timeWeights.x + timeWeights.y + timeWeights.z);
+        gl_FragColor = vec4((dayColor * timeWeights.x + sunsetColor * timeWeights.y + nightColor * timeWeights.z) / total, 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false,
+  });
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(900, GRAPHICS.skyWidthSegments, GRAPHICS.skyHeightSegments),
-    new THREE.MeshBasicMaterial({
-      map: backdrop,
-      side: THREE.BackSide,
-      depthWrite: false,
-      fog: false,
-      toneMapped: false,
-    }),
+    skyMaterial,
   );
   sky.rotation.y = Math.PI * 1.02;
   sky.renderOrder = -1000;
@@ -76,6 +110,43 @@ export function createScene(canvas) {
   sun.shadow.normalBias = 0.035;
   scene.add(sun);
   scene.add(sun.target);
+
+  const sunDirection = new THREE.Vector3(48, 68, 28);
+  let lastMaterialEnvironment = 1;
+  let lastMaterialRefresh = 0;
+  function setTimeOfDay(profile) {
+    skyMaterial.uniforms.timeWeights.value.fromArray(profile.weights);
+    renderer.toneMappingExposure = profile.exposure;
+    scene.fog.color.copy(profile.fogColor);
+    scene.fog.density = profile.fogDensity;
+    hemi.color.copy(profile.skyColor);
+    hemi.groundColor.copy(profile.groundColor);
+    hemi.intensity = profile.hemiIntensity;
+    sun.color.copy(profile.sunColor);
+    sun.intensity = profile.sunIntensity;
+    sunDirection.copy(profile.sunDirection);
+    // Three r160 has no scene.environmentIntensity. Apply the time-of-day HDR
+    // strength to unique materials, throttled so transitions remain cheap and
+    // late-loaded GLBs still inherit the current lighting within one second.
+    const now = performance.now();
+    if (Math.abs(profile.environmentIntensity - lastMaterialEnvironment) > 0.025 || now - lastMaterialRefresh > 1000) {
+      const materials = new Set();
+      scene.traverse((object) => {
+        if (!object.isMesh || !object.material) return;
+        const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of objectMaterials) materials.add(material);
+      });
+      for (const material of materials) {
+        if (!('envMapIntensity' in material)) continue;
+        if (material.userData.timeBaseEnvIntensity === undefined) {
+          material.userData.timeBaseEnvIntensity = material.envMapIntensity;
+        }
+        material.envMapIntensity = material.userData.timeBaseEnvIntensity * profile.environmentIntensity;
+      }
+      lastMaterialEnvironment = profile.environmentIntensity;
+      lastMaterialRefresh = now;
+    }
+  }
 
   function resize() {
     camera.aspect = innerWidth / innerHeight;
@@ -111,9 +182,9 @@ export function createScene(canvas) {
   // Keep the sun shadow box centered on the action
   function update(chaseTarget) {
     sky.position.set(chaseTarget.x, 0, chaseTarget.z);
-    sun.position.set(chaseTarget.x + 48, 68, chaseTarget.z + 28);
+    sun.position.set(chaseTarget.x + sunDirection.x, sunDirection.y, chaseTarget.z + sunDirection.z);
     sun.target.position.set(chaseTarget.x, 0, chaseTarget.z);
   }
 
-  return { renderer, scene, camera, update, updatePerformance };
+  return { renderer, scene, camera, update, updatePerformance, setTimeOfDay };
 }
