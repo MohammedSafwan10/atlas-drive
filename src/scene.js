@@ -11,6 +11,8 @@ export function createScene(canvas) {
     // detail with substantially lower bandwidth cost on tile-based GPUs.
     antialias: !IS_MOBILE,
     powerPreference: 'high-performance',
+    alpha: false,
+    stencil: false,
   });
   let renderPixelRatio = Math.min(devicePixelRatio, GRAPHICS.maxPixelRatio);
   renderer.setPixelRatio(renderPixelRatio);
@@ -72,11 +74,12 @@ export function createScene(canvas) {
         vec3 nightColor = timeWeights.z > 0.001 ? texture2D(nightMap, vSkyUv).rgb : vec3(0.0);
         float total = max(0.001, timeWeights.x + timeWeights.y + timeWeights.z);
         vec3 clearColor = (dayColor * timeWeights.x + sunsetColor * timeWeights.y + nightColor * timeWeights.z) / total;
-        vec3 stormColor = texture2D(stormMap, vSkyUv).rgb;
+        vec3 stormColor = weatherIntensity > 0.005 ? texture2D(stormMap, vSkyUv).rgb : vec3(0.0);
         gl_FragColor = vec4(mix(clearColor, stormColor, smoothstep(0.08, 0.9, weatherIntensity)), 1.0);
       }
     `,
     side: THREE.BackSide,
+    depthTest: true,
     depthWrite: false,
     fog: false,
     toneMapped: false,
@@ -86,7 +89,7 @@ export function createScene(canvas) {
     skyMaterial,
   );
   sky.rotation.y = Math.PI * 1.02;
-  sky.renderOrder = -1000;
+  sky.renderOrder = 0;
   sky.frustumCulled = false;
   scene.add(sky);
 
@@ -173,22 +176,22 @@ export function createScene(canvas) {
   }
   addEventListener('resize', resize);
 
-  // Mobile GPUs vary enormously. Adjust drawing-buffer resolution slowly,
-  // avoiding both prolonged low frame rates and distracting per-frame changes.
+  // Adjust drawing-buffer resolution smoothly to lock 60 FPS across GPUs,
+  // avoiding prolonged low frame rates while maintaining maximum visual sharpness.
   let performanceTime = 0;
   let performanceFrames = 0;
   function updatePerformance(frameTime) {
-    if (!IS_MOBILE || document.hidden) return;
+    if (document.hidden) return;
     performanceTime += Math.min(frameTime, 0.1);
     performanceFrames += 1;
-    if (performanceTime < 2.5) return;
+    if (performanceTime < 2.0) return;
 
     const fps = performanceFrames / performanceTime;
     let nextRatio = renderPixelRatio;
-    if (fps < 42) nextRatio = Math.max(GRAPHICS.minPixelRatio, renderPixelRatio - 0.1);
-    else if (fps > 57) nextRatio = Math.min(Math.min(devicePixelRatio, GRAPHICS.maxPixelRatio), renderPixelRatio + 0.1);
+    if (fps < 54) nextRatio = Math.max(GRAPHICS.minPixelRatio, renderPixelRatio - 0.08);
+    else if (fps > 58) nextRatio = Math.min(Math.min(devicePixelRatio, GRAPHICS.maxPixelRatio), renderPixelRatio + 0.05);
 
-    if (nextRatio !== renderPixelRatio) {
+    if (Math.abs(nextRatio - renderPixelRatio) > 0.02) {
       renderPixelRatio = nextRatio;
       renderer.setPixelRatio(renderPixelRatio);
       renderer.setSize(innerWidth, innerHeight, false);
