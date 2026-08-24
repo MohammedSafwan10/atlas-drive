@@ -1,19 +1,71 @@
 import * as THREE from 'three';
 import { IS_MOBILE } from './platform.js';
+import { roadPoint } from './path.js';
 
 export const WEATHER_MODES = ['auto', 'clear', 'storm'];
 
 const clamp01 = (value) => THREE.MathUtils.clamp(value, 0, 1);
 
 function makeRainMaterial() {
-  return new THREE.MeshBasicMaterial({
-    color: 0xb9ddff,
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uOpacity: { value: IS_MOBILE ? 0.56 : 0.66 },
+    },
+    vertexShader: `
+      attribute float instanceSeed;
+      varying vec2 vUv;
+      varying float vSeed;
+      varying float vDepth;
+      void main() {
+        vUv = uv;
+        vSeed = instanceSeed;
+        vec4 world = modelMatrix * instanceMatrix * vec4(position, 1.0);
+        vec4 mv = viewMatrix * world;
+        float distanceToCamera = -mv.z;
+        // Near-camera sheets are the main cause of "cartoon rain". Fade them
+        // before they grow into broad white bars, then soften the far field.
+        float nearFade = smoothstep(2.2, 7.5, distanceToCamera);
+        float farFade = 1.0 - smoothstep(34.0, 58.0, distanceToCamera);
+        vDepth = nearFade * farFade;
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      uniform float uOpacity;
+      varying vec2 vUv;
+      varying float vSeed;
+      varying float vDepth;
+      float hash(float n) { return fract(sin(n) * 43758.5453); }
+      void main() {
+        float across = abs(vUv.x * 2.0 - 1.0);
+        float filament = pow(max(0.0, 1.0 - across), 9.0);
+        float softEdge = pow(max(0.0, 1.0 - across), 2.2) * 0.055;
+        float ends = smoothstep(0.0, 0.16, vUv.y) * (1.0 - smoothstep(0.72, 1.0, vUv.y));
+        // Oscillating drops produce several uneven highlights inside a
+        // motion-blurred streak instead of one uniformly lit rectangle.
+        float speckle = 0.58 + 0.42 * sin(vUv.y * (19.0 + vSeed * 17.0) + vSeed * 31.0);
+        speckle = mix(0.87, 1.0, speckle * speckle);
+        float alpha = (filament * speckle + softEdge) * ends * vDepth * uOpacity;
+        if (alpha < 0.008) discard;
+        vec3 color = mix(vec3(0.52, 0.67, 0.82), vec3(0.9, 0.96, 1.0), filament * 0.68 + hash(vSeed) * 0.08);
+        gl_FragColor = vec4(color, alpha);
+      }
+    `,
     transparent: true,
-    opacity: IS_MOBILE ? 0.3 : 0.38,
     depthWrite: false,
     blending: THREE.NormalBlending,
     side: THREE.DoubleSide,
+    toneMapped: false,
   });
+}
+
+function cylinderBetween(a, b, radius, material) {
+  const direction = b.clone().sub(a);
+  const length = direction.length();
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.72, length, 5, 1), material);
+  mesh.position.copy(a).add(b).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  return mesh;
 }
 
 function makeMistTexture() {
@@ -42,11 +94,16 @@ export class WeatherSystem {
     this.autoTime = 0;
     this.lightningTimer = 8 + Math.random() * 10;
     this.lightningEnvelope = 0;
+    this.boltAge = Number.POSITIVE_INFINITY;
+    this.boltGroup = null;
     this.thunderTimer = -1;
     this.wind = new THREE.Vector3(0.16, 0, 0.04);
 
-    this.rainCount = IS_MOBILE ? 220 : 760;
-    const geometry = new THREE.PlaneGeometry(IS_MOBILE ? 0.022 : 0.028, IS_MOBILE ? 1.45 : 2.05);
+    this.rainCount = IS_MOBILE ? 280 : 1040;
+    const geometry = new THREE.PlaneGeometry(IS_MOBILE ? 0.036 : 0.045, IS_MOBILE ? 0.92 : 1.28);
+    const seeds = new Float32Array(this.rainCount);
+    for (let i = 0; i < this.rainCount; i++) seeds[i] = Math.random();
+    geometry.setAttribute('instanceSeed', new THREE.InstancedBufferAttribute(seeds, 1));
     this.rain = new THREE.InstancedMesh(geometry, makeRainMaterial(), this.rainCount);
     this.rain.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.rain.frustumCulled = false;
@@ -57,8 +114,9 @@ export class WeatherSystem {
         x: (Math.random() - 0.5) * 42,
         y: Math.random() * 24 - 4,
         z: Math.random() * 54 - 34,
-        speed: 21 + Math.random() * 18,
-        scale: 0.55 + Math.random() * 0.8,
+        speed: 23 + Math.random() * 20,
+        width: 0.55 + Math.random() * 0.65,
+        length: 0.55 + Math.random() * 0.9,
       });
     }
     scene.add(this.rain);
@@ -78,6 +136,26 @@ export class WeatherSystem {
     this.sprayCursor = 0;
     scene.add(this.spray);
 
+    // Tiny expanding rings provide the ground-contact cue that falling streaks
+    // alone cannot. They share one draw call and vanish inside tunnels.
+    this.splashCount = IS_MOBILE ? 24 : 64;
+    const splashGeometry = new THREE.RingGeometry(0.045, 0.075, 10);
+    splashGeometry.rotateX(-Math.PI / 2);
+    this.splashes = new THREE.InstancedMesh(
+      splashGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0xb9d4e3, transparent: true, opacity: IS_MOBILE ? 0.12 : 0.16,
+        depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+      }),
+      this.splashCount,
+    );
+    this.splashes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.splashes.frustumCulled = false;
+    this.splashDrops = Array.from({ length: this.splashCount }, () => ({ life: 0, maxLife: 0.35, point: new THREE.Vector3() }));
+    this.splashCursor = 0;
+    this.splashAccum = 0;
+    scene.add(this.splashes);
+
     this.lightning = new THREE.DirectionalLight(0xd9e8ff, 0);
     this.lightning.position.set(-25, 70, -40);
     scene.add(this.lightning);
@@ -86,8 +164,19 @@ export class WeatherSystem {
   setMode(mode) {
     this.mode = WEATHER_MODES.includes(mode) ? mode : 'auto';
     if (this.mode === 'clear') this.targetIntensity = 0;
-    if (this.mode === 'storm') this.targetIntensity = 1;
+    if (this.mode === 'storm') {
+      this.targetIntensity = 1;
+      // Give a manually selected storm one early cinematic strike; later
+      // lightning remains irregular and cannot be predicted by the player.
+      this.lightningTimer = Math.min(this.lightningTimer, 2.8 + Math.random() * 2.2);
+    }
     try { localStorage.setItem('turbo-weather-mode', this.mode); } catch { /* optional preference */ }
+  }
+
+  forceLightning(delay = 1.8) {
+    this.intensity = 1;
+    this.targetIntensity = 1;
+    this.lightningTimer = Math.max(0, delay);
   }
 
   _autoTarget() {
@@ -119,11 +208,47 @@ export class WeatherSystem {
       }
       dummy.position.set(drop.x, drop.y, drop.z);
       dummy.rotation.set(0, 0, -0.085);
-      dummy.scale.set(drop.scale, drop.scale, drop.scale);
+      dummy.scale.set(drop.width, drop.length, 1);
       dummy.updateMatrix();
       this.rain.setMatrixAt(i, dummy.matrix);
     }
     if (visible > 0 && exposed) this.rain.instanceMatrix.needsUpdate = true;
+  }
+
+  _emitGroundSplash(car) {
+    const splash = this.splashDrops[this.splashCursor];
+    this.splashCursor = (this.splashCursor + 1) % this.splashCount;
+    const lateral = (Math.random() - 0.5) * 11.4;
+    const z = car.z + 7 - Math.random() * 31;
+    roadPoint(z, lateral, 0.055, splash.point);
+    splash.life = 0.22 + Math.random() * 0.18;
+    splash.maxLife = splash.life;
+  }
+
+  _updateGroundSplashes(dt, car, exposed) {
+    const dummy = new THREE.Object3D();
+    if (exposed && this.intensity > 0.22) {
+      this.splashAccum += dt * (IS_MOBILE ? 9 : 23) * this.intensity;
+      while (this.splashAccum >= 1) {
+        this.splashAccum -= 1;
+        this._emitGroundSplash(car);
+      }
+    }
+    let visible = 0;
+    for (const splash of this.splashDrops) {
+      if (splash.life <= 0) continue;
+      splash.life -= dt;
+      if (splash.life <= 0) continue;
+      const progress = 1 - splash.life / splash.maxLife;
+      const scale = 0.45 + progress * 2.7;
+      dummy.position.copy(splash.point);
+      dummy.scale.set(scale, scale, scale);
+      dummy.updateMatrix();
+      this.splashes.setMatrixAt(visible++, dummy.matrix);
+    }
+    this.splashes.count = visible;
+    this.splashes.visible = exposed && visible > 0;
+    if (visible > 0) this.splashes.instanceMatrix.needsUpdate = true;
   }
 
   _emitSpray(car) {
@@ -160,10 +285,79 @@ export class WeatherSystem {
     this.spray.visible = this.intensity > 0.2;
   }
 
+  _disposeBolt() {
+    if (!this.boltGroup) return;
+    this.scene.remove(this.boltGroup);
+    const geometries = new Set();
+    const materials = new Set();
+    this.boltGroup.traverse((object) => {
+      if (object.geometry) geometries.add(object.geometry);
+      if (object.material) materials.add(object.material);
+    });
+    geometries.forEach((geometry) => geometry.dispose());
+    materials.forEach((material) => material.dispose());
+    this.boltGroup = null;
+  }
+
+  _spawnLightningBolt() {
+    this._disposeBolt();
+    const group = new THREE.Group();
+    const core = new THREE.MeshBasicMaterial({
+      color: 0xeaf4ff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending,
+      depthWrite: false, toneMapped: false,
+    });
+    const glow = new THREE.MeshBasicMaterial({
+      color: 0x8cbcff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending,
+      depthWrite: false, toneMapped: false,
+    });
+    core.userData.baseOpacity = 1;
+    glow.userData.baseOpacity = 0.16;
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+    const side = new THREE.Vector3(-forward.z, 0, forward.x);
+    const origin = this.camera.position.clone()
+      .addScaledVector(forward, 88 + Math.random() * 48)
+      .addScaledVector(side, (Math.random() - 0.5) * 82);
+    origin.y += 56 + Math.random() * 24;
+
+    const points = [origin.clone()];
+    const segments = IS_MOBILE ? 11 : 15;
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
+      points.push(new THREE.Vector3(
+        origin.x + (Math.random() - 0.5) * (3.8 + t * 6.5),
+        THREE.MathUtils.lerp(origin.y, 10 + Math.random() * 7, t),
+        origin.z + (Math.random() - 0.5) * (2.4 + t * 4.5),
+      ));
+    }
+    for (let i = 1; i < points.length; i++) {
+      group.add(cylinderBetween(points[i - 1], points[i], IS_MOBILE ? 0.065 : 0.08, core));
+      if (!IS_MOBILE) group.add(cylinderBetween(points[i - 1], points[i], 0.34, glow));
+      if (i > 2 && i < points.length - 3 && Math.random() < 0.26) {
+        let branchStart = points[i].clone();
+        const branchSegments = 3 + Math.floor(Math.random() * 3);
+        for (let j = 0; j < branchSegments; j++) {
+          const branchEnd = branchStart.clone().add(new THREE.Vector3(
+            (Math.random() < 0.5 ? -1 : 1) * (2.2 + Math.random() * 4.5),
+            -(3 + Math.random() * 5),
+            (Math.random() - 0.5) * 4,
+          ));
+          group.add(cylinderBetween(branchStart, branchEnd, IS_MOBILE ? 0.025 : 0.038, core));
+          branchStart = branchEnd;
+        }
+      }
+    }
+    this.boltGroup = group;
+    this.scene.add(group);
+  }
+
   _updateLightning(dt) {
     this.lightningTimer -= dt * (0.35 + this.intensity);
     if (this.intensity > 0.72 && this.lightningTimer <= 0) {
-      this.lightningEnvelope = 1;
+      this.boltAge = 0;
+      this._spawnLightningBolt();
       this.lightningTimer = 7 + Math.random() * 15;
       this.thunderTimer = 0.9 + Math.random() * 2.4;
       document.getElementById('weather-flash')?.animate(
@@ -171,7 +365,20 @@ export class WeatherSystem {
         { duration: 520, easing: 'ease-out' },
       );
     }
-    this.lightningEnvelope = Math.max(0, this.lightningEnvelope - dt * 5.2);
+    this.boltAge += dt;
+    if (this.boltAge < 0.075) this.lightningEnvelope = 1;
+    else if (this.boltAge < 0.14) this.lightningEnvelope = 0.12;
+    else if (this.boltAge < 0.24) this.lightningEnvelope = 0.62;
+    else this.lightningEnvelope = Math.max(0, 0.45 - (this.boltAge - 0.24) * 3.6);
+    if (this.boltGroup) {
+      this.boltGroup.visible = this.lightningEnvelope > 0.025;
+      this.boltGroup.traverse((object) => {
+        if (object.isMesh && object.material) {
+          const base = object.material.userData.baseOpacity ?? 1;
+          object.material.opacity = base * Math.min(1, this.lightningEnvelope * 1.5);
+        }
+      });
+    }
     this.lightning.intensity = this.lightningEnvelope * 7.5;
     if (this.thunderTimer >= 0) {
       this.thunderTimer -= dt;
@@ -189,12 +396,15 @@ export class WeatherSystem {
       : 1.65;
     this.intensity += (this.targetIntensity - this.intensity) * Math.min(1, dt * response);
     this.intensity = clamp01(this.intensity);
-    this.applyWeather(this.intensity, this.lightningEnvelope);
     this.road.setWetness(this.intensity);
     this.audio.setWeather(this.intensity);
     this._updateRain(dt, !sheltered);
+    this._updateGroundSplashes(dt, car, !sheltered);
     this._updateSpray(dt, car, active);
     this._updateLightning(dt);
+    // Lightning updates after the weather profile so the new flash would be a
+    // frame late without this lightweight second application.
+    this.applyWeather(this.intensity, this.lightningEnvelope);
     return this.intensity;
   }
 }

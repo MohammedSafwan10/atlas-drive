@@ -296,6 +296,7 @@ addEventListener('keydown', (e) => {
   if ((e.code === 'Escape' || e.code === 'KeyP') && (state === 'playing' || state === 'countdown')) pauseGame();
   else if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'paused') resumeGame();
   if (e.code === 'KeyM') audio.toggleMute();
+  if (import.meta.env.DEV && e.code === 'KeyL') weather.forceLightning(0);
   if ((e.code === 'Space' || e.code === 'Enter') && state === 'finishCinematic') skipFinish();
 });
 
@@ -479,4 +480,5 @@ try {
 } catch {
   hud.setWeatherMode('auto');
 }
+if (import.meta.env.DEV && previewParams.has('previewLightning')) weather.forceLightning();
 tick();

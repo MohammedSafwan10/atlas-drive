@@ -6,6 +6,13 @@ const ENGINE_FILES = [
   '/assets/audio/engine-high.ogg',
 ];
 
+const WEATHER_FILES = [
+  '/assets/audio/rain-heavy-loop.ogg',
+  '/assets/audio/thunder-1.ogg',
+  '/assets/audio/thunder-2.ogg',
+  '/assets/audio/thunder-3.ogg',
+];
+
 // Reactive game mix: three CC0 RPM bands plus lightweight synthesized effects.
 export class GameAudio {
   constructor() {
@@ -23,6 +30,9 @@ export class GameAudio {
     this.rivalGain = null;
     this.rivalSource = null;
     this.weatherGain = null;
+    this.recordedRainGain = null;
+    this.recordedRainSource = null;
+    this.thunderBuffers = [];
     this.lastKmh = 0;
     this.muteButton = document.getElementById('sound-btn');
     this.muteButton?.addEventListener('click', () => this.toggleMute());
@@ -94,6 +104,25 @@ export class GameAudio {
     this.roadGain = this._makeNoiseLoop('bandpass', 720, 0.75);
     this.nitroGain = this._makeNoiseLoop('highpass', 1450, 0.55);
     this.weatherGain = this._makeNoiseLoop('lowpass', 2600, 0.25);
+    const weatherBuffers = await Promise.all(WEATHER_FILES.map(async (url) => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        return await context.decodeAudioData(await response.arrayBuffer());
+      } catch {
+        return null;
+      }
+    }));
+    if (weatherBuffers[0]) {
+      this.recordedRainSource = context.createBufferSource();
+      this.recordedRainGain = context.createGain();
+      this.recordedRainSource.buffer = weatherBuffers[0];
+      this.recordedRainSource.loop = true;
+      this.recordedRainGain.gain.value = 0;
+      this.recordedRainSource.connect(this.recordedRainGain).connect(this.master);
+      this.recordedRainSource.start();
+    }
+    this.thunderBuffers = weatherBuffers.slice(1).filter(Boolean);
     this.ready = true;
     this.ui(520);
   }
@@ -210,13 +239,25 @@ export class GameAudio {
 
   setWeather(intensity) {
     if (!this.ready || !this.weatherGain) return;
-    const volume = this.paused ? 0 : clamp(intensity) * 0.18;
+    const amount = clamp(intensity);
+    const volume = this.paused ? 0 : amount * (this.recordedRainGain ? 0.035 : 0.18);
     this.weatherGain.gain.setTargetAtTime(volume, this.context.currentTime, 0.32);
+    this.recordedRainGain?.gain.setTargetAtTime(this.paused ? 0 : amount * 0.28, this.context.currentTime, 0.5);
   }
 
   thunder(intensity = 1) {
     if (!this.ready || this.muted) return;
     const now = this.context.currentTime;
+    const recorded = this.thunderBuffers.length > 0;
+    if (recorded) {
+      const sample = this.context.createBufferSource();
+      const sampleGain = this.context.createGain();
+      sample.buffer = this.thunderBuffers[Math.floor(Math.random() * this.thunderBuffers.length)];
+      sample.playbackRate.value = 0.94 + Math.random() * 0.1;
+      sampleGain.gain.value = 0.46 * clamp(intensity, 0.25, 1);
+      sample.connect(sampleGain).connect(this.master);
+      sample.start(now);
+    }
     const source = this.context.createBufferSource();
     const filter = this.context.createBiquadFilter();
     const gain = this.context.createGain();
@@ -225,7 +266,7 @@ export class GameAudio {
     filter.frequency.setValueAtTime(260, now);
     filter.frequency.exponentialRampToValueAtTime(58, now + 2.8);
     gain.gain.setValueAtTime(0.001, now);
-    gain.gain.exponentialRampToValueAtTime(0.52 * clamp(intensity, 0.2, 1), now + 0.035);
+    gain.gain.exponentialRampToValueAtTime((recorded ? 0.13 : 0.52) * clamp(intensity, 0.2, 1), now + 0.035);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 3.25);
     source.connect(filter).connect(gain).connect(this.master);
     source.start(now);
@@ -236,7 +277,7 @@ export class GameAudio {
       rumble.type = 'sine';
       rumble.frequency.setValueAtTime(frequency, now + offset);
       rumble.frequency.exponentialRampToValueAtTime(32, now + offset + duration);
-      rumbleGain.gain.setValueAtTime(0.18 * intensity, now + offset);
+      rumbleGain.gain.setValueAtTime((recorded ? 0.07 : 0.18) * intensity, now + offset);
       rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + offset + duration);
       rumble.connect(rumbleGain).connect(this.master);
       rumble.start(now + offset);
@@ -287,6 +328,7 @@ export class GameAudio {
     this.nitroGain.gain.setTargetAtTime(0, now, 0.035);
     this.rivalGain?.gain.setTargetAtTime(0, now, 0.035);
     this.weatherGain?.gain.setTargetAtTime(0, now, 0.12);
+    this.recordedRainGain?.gain.setTargetAtTime(0, now, 0.16);
   }
 
   toggleMute() {

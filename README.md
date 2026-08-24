@@ -18,7 +18,7 @@ A fast, browser-based 3D highway driving game built with Three.js. Compete in a 
 - Road-casting headlights on the player and all three race rivals, with mobile distance culling
 - Skippable multi-angle finish replay followed by a ranked three-car podium, confetti, result statistics, and finish audio stinger
 - Traffic, near-miss scoring, three-life collision system, speedometer, nitro bar, and FPS counter
-- Reactive three-band engine audio, road/wind noise, nitro, impacts, and UI sounds
+- Reactive three-band engine audio, recorded CC0 rain and thunder variations, road/wind noise, nitro, impacts, and UI sounds
 - Instanced small vegetation and distance-aware scenery for better browser performance
 
 ## Run locally
