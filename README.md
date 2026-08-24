@@ -2,13 +2,13 @@
 
 A cinematic browser racing game built with Three.js. Race tactical rivals across the 6 km Alpine Pass or dodge traffic in Endless Highway while dynamic time, storms, wet roads, nitro and a detailed PBR environment transform every run.
 
-![Atlas Drive gameplay](docs/gameplay.png)
+[![Atlas Drive gameplay — watch the 30-second demo](docs/gameplay.png)](public/media/atlas-drive-gameplay.mp4)
+
+[▶ Watch the 30-second gameplay demo](public/media/atlas-drive-gameplay.mp4)
 
 ## Gameplay
 
-The repository includes the screenshot above as its current visual preview. A full gameplay video can be attached here without adding a large binary to the Git history: open `README.md` on GitHub, choose **Edit**, drag the final MP4 directly below this paragraph, and commit the generated video link.
-
-<!-- GAMEPLAY_VIDEO: Drag the final MP4 into GitHub's README editor here. GitHub will generate a user-attachments URL and an embedded player. -->
+The demo captures a complete 1080p race sequence across changing daylight and weather, including tactical rival AI, nitro, the HUD and nighttime headlights.
 
 ## Highlights
 
