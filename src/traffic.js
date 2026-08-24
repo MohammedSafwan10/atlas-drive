@@ -229,10 +229,22 @@ export class Traffic {
   spawn(playerZ) {
     const car = this.cars.find(c => !c.mesh.visible);
     if (!car) return;
-    const lane = Math.floor(Math.random() * 3);
+
+    // Smart lane selection: count cars in each lane within 180m ahead of player
+    const laneCounts = [0, 0, 0];
+    for (const other of this.cars) {
+      if (other.mesh.visible && Math.abs(other.z - playerZ) < 180) {
+        laneCounts[other.lane] = (laneCounts[other.lane] || 0) + 1;
+      }
+    }
+    const minCount = Math.min(...laneCounts);
+    const candidateLanes = [0, 1, 2].filter(l => laneCounts[l] === minCount);
+    const lane = candidateLanes[Math.floor(Math.random() * candidateLanes.length)];
+
     car.lane = lane;
-    car.z = playerZ - 180 - Math.random() * 120;
-    car.speed = 16 + Math.random() * 14; // 58–108 km/h
+    car.x = LANE_X[lane];
+    car.z = playerZ - 130 - Math.random() * 90;
+    car.speed = 18 + Math.random() * 12; // 65–108 km/h
     car.passed = false;
     car.hasCollided = false;
     roadPoint(car.z, LANE_X[car.lane], 0, car.mesh.position);
@@ -248,7 +260,7 @@ export class Traffic {
     for (const car of this.cars) if (car.mesh.visible) active += 1;
     if (active < GRAPHICS.trafficCount && this.spawnTimer <= 0) {
       this.spawn(playerZ);
-      this.spawnTimer = 0.5;
+      this.spawnTimer = 0.6;
     }
 
     for (const car of this.cars) {
@@ -272,8 +284,10 @@ export class Traffic {
       if (dx < car.halfW + 0.95 && dz < car.halfL + 2.2) {
         if (!car.hasCollided) {
           car.hasCollided = true;
-          car.speed = Math.max(car.speed, 28);
-          car.z -= 3.5;
+          // Propel hit traffic car forward so player doesn't remain trapped
+          car.speed = Math.max(car.speed, 35);
+          car.z -= 28;
+          roadPoint(car.z, LANE_X[car.lane], 0, car.mesh.position);
           onCrash();
         }
       }

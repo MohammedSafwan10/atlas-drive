@@ -198,48 +198,56 @@ export class GameAudio {
   }
 
   crash() {
-    if (!this.ready || this.muted) return;
-    const now = this.context.currentTime;
-    const noise = this.context.createBufferSource();
-    const filter = this.context.createBiquadFilter();
-    const gain = this.context.createGain();
-    noise.buffer = this.noiseBuffer;
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1800, now);
-    filter.frequency.exponentialRampToValueAtTime(120, now + 0.32);
-    gain.gain.setValueAtTime(0.72, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
-    noise.connect(filter).connect(gain).connect(this.master);
-    noise.start(now);
-    noise.stop(now + 0.36);
+    if (!this.ready || this.muted || !this.context || this.context.state !== 'running') return;
+    try {
+      const now = this.context.currentTime;
+      const noise = this.context.createBufferSource();
+      const filter = this.context.createBiquadFilter();
+      const gain = this.context.createGain();
+      noise.buffer = this.noiseBuffer;
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1800, now);
+      filter.frequency.linearRampToValueAtTime(120, now + 0.32);
+      gain.gain.setValueAtTime(0.72, now);
+      gain.gain.linearRampToValueAtTime(0, now + 0.34);
+      noise.connect(filter).connect(gain).connect(this.master);
+      noise.start(now);
+      noise.stop(now + 0.36);
 
-    const thud = this.context.createOscillator();
-    const thudGain = this.context.createGain();
-    thud.type = 'triangle';
-    thud.frequency.setValueAtTime(105, now);
-    thud.frequency.exponentialRampToValueAtTime(38, now + 0.22);
-    thudGain.gain.setValueAtTime(0.42, now);
-    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
-    thud.connect(thudGain).connect(this.master);
-    thud.start(now);
-    thud.stop(now + 0.25);
+      const thud = this.context.createOscillator();
+      const thudGain = this.context.createGain();
+      thud.type = 'triangle';
+      thud.frequency.setValueAtTime(105, now);
+      thud.frequency.linearRampToValueAtTime(38, now + 0.22);
+      thudGain.gain.setValueAtTime(0.42, now);
+      thudGain.gain.linearRampToValueAtTime(0, now + 0.24);
+      thud.connect(thudGain).connect(this.master);
+      thud.start(now);
+      thud.stop(now + 0.25);
+    } catch (e) {
+      console.warn('Audio crash effect failed', e);
+    }
   }
 
   nearMiss() {
-    if (!this.ready || this.muted) return;
-    const now = this.context.currentTime;
-    const source = this.context.createBufferSource();
-    const filter = this.context.createBiquadFilter();
-    const gain = this.context.createGain();
-    source.buffer = this.noiseBuffer;
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1600, now);
-    filter.frequency.exponentialRampToValueAtTime(420, now + 0.22);
-    gain.gain.setValueAtTime(0.18, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
-    source.connect(filter).connect(gain).connect(this.master);
-    source.start(now);
-    source.stop(now + 0.25);
+    if (!this.ready || this.muted || !this.context || this.context.state !== 'running') return;
+    try {
+      const now = this.context.currentTime;
+      const source = this.context.createBufferSource();
+      const filter = this.context.createBiquadFilter();
+      const gain = this.context.createGain();
+      source.buffer = this.noiseBuffer;
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1600, now);
+      filter.frequency.linearRampToValueAtTime(420, now + 0.22);
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.linearRampToValueAtTime(0, now + 0.24);
+      source.connect(filter).connect(gain).connect(this.master);
+      source.start(now);
+      source.stop(now + 0.25);
+    } catch (e) {
+      console.warn('Audio nearMiss effect failed', e);
+    }
   }
 
   setWeather(intensity) {

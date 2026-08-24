@@ -234,9 +234,8 @@ function resumeGame() {
 function hit() {
   if (gameMode !== 'endless' || state !== 'playing' || invulnerable > 0) return;
   lives -= 1;
-  // Give impact immediate physical feedback and let the traffic pull away.
-  // Keeping the player model visible avoids the old two-second "glitch" blink.
-  car.speed *= 0.5;
+  car.speed *= 0.65;
+  car.x = THREE.MathUtils.clamp(car.x + (car.x >= 0 ? 0.75 : -0.75), -4.8, 4.8);
   audio.crash();
   impactShake = lives <= 0 ? 0.42 : 0.28;
   if (navigator.vibrate) navigator.vibrate(lives <= 0 ? [90, 45, 120] : 70);
@@ -246,9 +245,9 @@ function hit() {
     state = 'crashed';
     car.crashed = true;
     hud.showPauseButton(false);
-    setTimeout(() => hud.showGameOver(score), 500);
+    setTimeout(() => hud.showGameOver(score), 600);
   } else {
-    invulnerable = 1.15;
+    invulnerable = 1.8;
   }
 }
 
@@ -384,7 +383,7 @@ function tick() {
   if (state === 'playing') {
     if (invulnerable > 0) {
       invulnerable -= dt;
-      car.group.visible = true;
+      car.group.visible = Math.floor(invulnerable * 14) % 2 === 0;
     } else {
       car.group.visible = true;
     }
