@@ -38,6 +38,11 @@ export class GameAudio {
     this.muteButton?.addEventListener('click', () => this.toggleMute());
   }
 
+  init() {
+    if (!this.loading) this.loading = this._init().catch((err) => console.warn('Audio pre-warm error', err));
+    return this.loading;
+  }
+
   async start() {
     if (!this.loading) this.loading = this._init();
     if (this.context?.state === 'suspended') await this.context.resume();

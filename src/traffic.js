@@ -153,15 +153,17 @@ export class Traffic {
       }
 
       g.visible = false;
+      g.position.set(0, -100, -9999);
       this.group.add(g);
       const carEntry = {
-        mesh: g, lane: 0, targetLane: 0, x: 0, z: 0, speed: 0,
+        mesh: g, lane: 0, targetLane: 0, x: 0, z: -9999, speed: 0,
         halfW: 0.95, halfL: 2.2,
         passed: false, laneTimer: 0, collisionCooldown: 0,
         racerIndex: -1, finished: false, nitroTimer: 0, nitroCooldown: 0,
         nitroAmount: 1, nitroActive: false, nitroFX: null, nitroFlames: [],
         mistakeTimer: 0, mistakeCooldown: 0, headlightBeams: [],
         raceElapsed: 0, targetX: 0, lateralVelocity: 0, tacticalState: 'RACING_LINE',
+        hasCollided: false,
       };
       this.cars.push(carEntry);
       attachHeadlightBeams(carEntry);
@@ -212,6 +214,18 @@ export class Traffic {
     }, undefined, () => draco.dispose());
   }
 
+  warmUp(renderer, scene, camera) {
+    for (const car of this.cars) {
+      car.mesh.visible = true;
+      car.mesh.position.set(0, -50, -500);
+    }
+    renderer.compile(scene, camera);
+    for (const car of this.cars) {
+      car.mesh.visible = false;
+      car.mesh.position.set(0, -100, -9999);
+    }
+  }
+
   spawn(playerZ) {
     const car = this.cars.find(c => !c.mesh.visible);
     if (!car) return;
@@ -220,6 +234,9 @@ export class Traffic {
     car.z = playerZ - 180 - Math.random() * 120;
     car.speed = 16 + Math.random() * 14; // 58–108 km/h
     car.passed = false;
+    car.hasCollided = false;
+    roadPoint(car.z, LANE_X[car.lane], 0, car.mesh.position);
+    car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
     car.mesh.visible = true;
   }
 
@@ -243,6 +260,8 @@ export class Traffic {
       // Despawn behind
       if (car.z > playerZ + 40) {
         car.mesh.visible = false;
+        car.z = -9999;
+        car.mesh.position.set(0, -100, -9999);
         continue;
       }
 
@@ -251,7 +270,12 @@ export class Traffic {
 
       // Collision (AABB)
       if (dx < car.halfW + 0.95 && dz < car.halfL + 2.2) {
-        onCrash();
+        if (!car.hasCollided) {
+          car.hasCollided = true;
+          car.speed = Math.max(car.speed, 28);
+          car.z -= 3.5;
+          onCrash();
+        }
       }
 
       // Near miss: passed closely without collision
@@ -268,6 +292,9 @@ export class Traffic {
       car.mesh.visible = false;
       car.racerIndex = -1;
       car.nitroActive = false;
+      car.hasCollided = false;
+      car.z = -9999;
+      car.mesh.position.set(0, -100, -9999);
       if (car.nitroFX) car.nitroFX.visible = false;
     }
   }
@@ -275,10 +302,25 @@ export class Traffic {
   setNightFactor(factor, playerZ = 0) {
     const night = THREE.MathUtils.clamp(factor, 0, 1);
     this.headlightMaterial.emissiveIntensity = 0.45 + night * 5.2;
+    if (night < 0.05) {
+      for (const car of this.cars) {
+        for (const beam of car.headlightBeams || []) beam.intensity = 0;
+      }
+      return;
+    }
+    // Only illuminate the closest 2 visible cars within 65m
+    const visibleNearby = this.cars
+      .filter((car) => car.mesh.visible)
+      .map((car) => ({ car, dist: Math.abs(car.z - playerZ) }))
+      .filter(({ dist }) => dist < 65)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 2)
+      .map(({ car }) => car);
+
     for (const car of this.cars) {
-      const closeEnough = !IS_MOBILE || Math.abs(car.z - playerZ) < 95;
+      const active = visibleNearby.includes(car);
       for (const beam of car.headlightBeams || []) {
-        beam.intensity = car.mesh.visible && closeEnough ? night * 145 : 0;
+        beam.intensity = active ? night * 145 : 0;
       }
     }
   }

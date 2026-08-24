@@ -91,6 +91,7 @@ function resetCommon() {
   pendingRaceResult = null;
   finishPresentation.stop();
   hud.showFinishCinematic(false);
+  clock.getDelta();
 }
 
 function startEndless() {
@@ -485,6 +486,8 @@ if (import.meta.env.DEV && previewParams.has('previewLightning')) weather.forceL
 tick();
 
 loadingGate.reveal(renderer, scene, camera).then(() => {
+  audio.init();
+  traffic.warmUp(renderer, scene, camera);
   state = 'start';
   clock.getDelta();
   hud.showStart();
