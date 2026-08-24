@@ -376,8 +376,8 @@ export class Traffic {
       car.targetX = car.x;
       car.lateralVelocity = 0;
       car.tacticalState = 'RACING_LINE';
-      car.mesh.visible = true;
-      roadPoint(car.z, car.x, rampSurfaceLift(car.z), car.mesh.position);
+      const lift = Math.abs(car.x) < 3.4 ? rampSurfaceLift(car.z) : 0;
+      roadPoint(car.z, car.x, lift, car.mesh.position);
       car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
     }
   }
@@ -559,7 +559,8 @@ export class Traffic {
         if (-car.z >= RACE_DISTANCE) car.finished = true;
       }
 
-      roadPoint(car.z, car.x, rampSurfaceLift(car.z), car.mesh.position);
+      const lift = Math.abs(car.x) < 3.4 ? rampSurfaceLift(car.z) : 0;
+      roadPoint(car.z, car.x, lift, car.mesh.position);
       const steerYaw = clamp(car.lateralVelocity * -0.012, -0.055, 0.055);
       const bodyRoll = clamp(car.lateralVelocity * -0.008, -0.035, 0.035);
       car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z) + steerYaw, bodyRoll);

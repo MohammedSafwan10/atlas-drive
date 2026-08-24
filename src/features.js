@@ -22,23 +22,21 @@ export function modeForSegment(k) {
   return 'open';
 }
 
-// Absolute z of each ramp lip (launch edge, the -z side of the strip).
-// Ramps sit at local offsets -25 and +20 and are 10 m long.
+// Absolute z of single centered ramp lip (launch edge at -z side).
+// Single 14 m ramp centered at local offset 0 (from localZ +7 down to -7).
 export function rampLips(k) {
   const c = k * SEG_LEN;
-  return [c - 30, c + 15];
+  return [c - 7];
 }
 
 export function rampSurfaceLift(z) {
   const k = Math.round(z / SEG_LEN);
   if (modeForSegment(k) !== 'ramp') return 0;
   const localZ = z - k * SEG_LEN;
-  for (const center of [-25, 20]) {
-    const u = (center + 5 - localZ) / 10;
-    if (u >= 0 && u <= 1) {
-      const shaped = Math.pow(Math.min(u / 0.86, 1), 1.28);
-      return 1.1 * shaped;
-    }
+  const u = (7 - localZ) / 14;
+  if (u >= 0 && u <= 1) {
+    const shaped = Math.pow(Math.min(u / 0.92, 1), 1.32);
+    return 1.35 * shaped;
   }
   return 0;
 }

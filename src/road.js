@@ -92,10 +92,10 @@ function makeVerticalRibbon(centerZ, lateral, low, high, step = STEP) {
 }
 
 function rampLiftProfile(u) {
-  return Math.pow(THREE.MathUtils.clamp(u / 0.86, 0, 1), 1.28);
+  return Math.pow(THREE.MathUtils.clamp(u / 0.92, 0, 1), 1.32);
 }
 
-function makeRampSide(centerZ, lateral, maxLift, length = 10, step = 0.65) {
+function makeRampSide(centerZ, lateral, maxLift, length = 14, step = 0.65) {
   const rows = Math.round(length / step) + 1;
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(rows * 6);
@@ -261,11 +261,19 @@ export class Road {
     // point lights, keeping the concrete readable instead of pitch black.
     tunnelMaterial.emissive.set(0x24221f);
     tunnelMaterial.emissiveIntensity = 0.45;
-    const rampMaterial = asphaltMaterial.clone();
-    rampMaterial.color.set(0x666a64);
-    rampMaterial.roughness = 0.96;
+    const rampMaterial = new THREE.MeshStandardMaterial({
+      color: 0x161e28,
+      roughness: 0.42,
+      metalness: 0.8,
+    });
     const rampConcreteMaterial = concreteMaterial.clone();
     rampConcreteMaterial.side = THREE.DoubleSide;
+    const rampNeonMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00f0ff,
+      emissive: 0x00d2ff,
+      emissiveIntensity: 1.8,
+      roughness: 0.2,
+    });
     const materials = {
       asphalt: asphaltMaterial,
       line: new THREE.MeshStandardMaterial({ color: 0xf5f4e9, roughness: 0.55, emissive: 0x181816 }),
@@ -286,6 +294,7 @@ export class Road {
         side: THREE.DoubleSide,
       }),
       ramp: rampMaterial,
+      rampNeon: rampNeonMaterial,
       rampConcrete: rampConcreteMaterial,
       hazard: new THREE.MeshStandardMaterial({
         color: 0xffbd28,
@@ -384,49 +393,56 @@ export class Road {
         segment.fixtures.push({ object: portal, offset, lateral: 0, height: 0, kind: 'portal' });
       }
 
-      // Raised asphalt wedges with concrete side faces and reflective edges.
-      for (const offset of [-25, 20]) {
-        const length = 10;
-        const maxLift = 1.1;
-        const ramp = addRibbon(
-          makeRibbon(segment.centerZ + offset, -6.25, 6.25, maxLift, length, 0.65, rampLiftProfile),
-          materials.ramp,
-          true,
-        );
-        ramp.geometry.userData.shortOffset = offset;
-        ramp.userData.kind = 'ramp';
+      // Tactical Stunt Launch Ramp: 1 centered 14 m ramp spanning center overtaking lanes (-3.4 to +3.4)
+      const offset = 0;
+      const length = 14;
+      const maxLift = 1.35;
+      const ramp = addRibbon(
+        makeRibbon(segment.centerZ + offset, -3.4, 3.4, maxLift, length, 0.65, rampLiftProfile),
+        materials.ramp,
+        true,
+      );
+      ramp.geometry.userData.shortOffset = offset;
+      ramp.userData.kind = 'ramp';
 
-        for (const side of [-1, 1]) {
-          const edge = addRibbon(
-            makeRibbon(
-              segment.centerZ + offset,
-              side * 6.22 - 0.12,
-              side * 6.22 + 0.12,
-              maxLift + 0.035,
-              length,
-              0.65,
-              rampLiftProfile,
-            ),
-            materials.hazard,
-          );
-          edge.geometry.userData.shortOffset = offset;
-          edge.userData.kind = 'ramp';
+      // Glowing center speed chevrons
+      const chevron = addRibbon(
+        makeRibbon(segment.centerZ + offset, -0.45, 0.45, maxLift + 0.02, length, 0.65, rampLiftProfile),
+        materials.rampNeon,
+      );
+      chevron.geometry.userData.shortOffset = offset;
+      chevron.userData.kind = 'ramp';
 
-          const sideWall = addRibbon(
-            makeRampSide(segment.centerZ + offset, side * 6.3, maxLift, length),
-            materials.rampConcrete,
-          );
-          sideWall.geometry.userData.shortOffset = offset;
-          sideWall.userData.kind = 'rampSide';
-        }
-
-        const lipMarker = addRibbon(
-          makeRibbon(segment.centerZ + offset - length / 2 + 0.28, -6.2, 6.2, maxLift + 0.045, 0.48, 0.48),
+      for (const side of [-1, 1]) {
+        const edge = addRibbon(
+          makeRibbon(
+            segment.centerZ + offset,
+            side * 3.4 - (side > 0 ? 0.22 : -0.02),
+            side * 3.4 + (side > 0 ? 0.02 : 0.22),
+            maxLift + 0.035,
+            length,
+            0.65,
+            rampLiftProfile,
+          ),
           materials.hazard,
         );
-        lipMarker.geometry.userData.shortOffset = offset - length / 2 + 0.28;
-        lipMarker.userData.kind = 'ramp';
+        edge.geometry.userData.shortOffset = offset;
+        edge.userData.kind = 'ramp';
+
+        const sideWall = addRibbon(
+          makeRampSide(segment.centerZ + offset, side * 3.42, maxLift, length),
+          materials.rampConcrete,
+        );
+        sideWall.geometry.userData.shortOffset = offset;
+        sideWall.userData.kind = 'rampSide';
       }
+
+      const lipMarker = addRibbon(
+        makeRibbon(segment.centerZ + offset - length / 2 + 0.28, -3.4, 3.4, maxLift + 0.05, 0.52, 0.52),
+        materials.hazard,
+      );
+      lipMarker.geometry.userData.shortOffset = offset - length / 2 + 0.28;
+      lipMarker.userData.kind = 'ramp';
 
       const lightOffsets = IS_MOBILE ? [0] : [-42, -2, 38];
       for (const offset of lightOffsets) {

@@ -178,7 +178,7 @@ export class Car {
   }
 
   syncToRoad() {
-    const surfaceLift = this.airborne ? 0 : rampSurfaceLift(this.z);
+    const surfaceLift = this.airborne || Math.abs(this.x) >= 3.4 ? 0 : rampSurfaceLift(this.z);
     roadPoint(this.z, this.x, (this.airY || 0) + surfaceLift, this.group.position);
     const airPitch = this.airborne ? -Math.atan2(this.airVy, Math.max(20, this.speed)) * 0.55 : 0;
     this.group.rotation.set(
@@ -228,8 +228,8 @@ export class Car {
     this.x += this.steerAngle * dt * lateralGain;
     this.x = Math.max(-5.2, Math.min(5.2, this.x));
 
-    // Ramp launch: crossing a ramp lip fast enough puts the car airborne
-    if (!this.airborne && this.speed > RAMP_MIN_LAUNCH_SPEED && Math.abs(this.x) < 6.2) {
+    // Tactical ramp launch: crossing ramp lip within lateral span (-3.4 to +3.4)
+    if (!this.airborne && this.speed > RAMP_MIN_LAUNCH_SPEED && Math.abs(this.x) < 3.4) {
       const lip = this.z - this.speed * dt; // z after this frame's move
       const k = Math.round(lip / SEG_LEN);
       if (modeForSegment(k) === 'ramp') {
@@ -237,8 +237,10 @@ export class Car {
           if (this.z >= edge && lip < edge) {
             this.airborne = true;
             this.airTime = 0;
-            this.airY = Math.max(this.airY, 1.1);
-            this.airVy = 3.2 + this.speed * 0.085;
+            this.airY = Math.max(this.airY, 1.35);
+            this.airVy = 4.0 + this.speed * 0.095;
+            // Reward stunt launch with instant +20% Nitro recharge!
+            this.nitroAmount = Math.min(1, this.nitroAmount + 0.2);
             break;
           }
         }
