@@ -13,8 +13,8 @@ export const GRAPHICS = Object.freeze({
   // visible hitch. DPR 1.2 is the tested balance for the target handset.
   // On desktop / Retina screens, DPR 1.5 preserves full subpixel clarity while
   // reducing GPU fill-rate by 44% compared to DPR 2.0.
-  maxPixelRatio: IS_MOBILE ? 1.2 : 1.5,
-  minPixelRatio: IS_MOBILE ? 1.2 : 1,
+  maxPixelRatio: IS_MOBILE ? 1.2 : 1.25,
+  minPixelRatio: 0.65,
   shadowMapSize: IS_MOBILE ? 0 : 1024,
   anisotropy: IS_MOBILE ? 4 : 8,
   terrainSegments: IS_MOBILE ? 80 : 160,

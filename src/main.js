@@ -117,6 +117,8 @@ function resetCommon() {
   clock.getDelta();
 }
 
+let pendingMode = 'race';
+
 function startEndless() {
   menuInSetup = false;
   gameMode = 'endless';
@@ -146,11 +148,17 @@ function startRace() {
   audio.ui(440);
 }
 
-function openRaceSetup() {
+function openSetup(mode = 'race') {
   if (state !== 'start') return;
+  pendingMode = mode;
   menuInSetup = true;
-  hud.showRaceSetup();
+  hud.showRaceSetup(mode);
   audio.ui(560);
+}
+
+function confirmLaunch() {
+  if (pendingMode === 'race') startRace();
+  else startEndless();
 }
 
 function closeRaceSetup() {
@@ -297,9 +305,8 @@ function skipFinish() {
 }
 
 hud.bind({
-  startEndless,
-  startRace,
-  openRaceSetup,
+  openSetup,
+  confirmLaunch,
   closeRaceSetup,
   restart: restartGame,
   pause: pauseGame,
@@ -314,8 +321,8 @@ hud.bind({
 addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && (state === 'crashed' || state === 'finished')) restartGame();
   if (e.code === 'Enter' && state === 'start') {
-    if (menuInSetup) startRace();
-    else openRaceSetup();
+    if (menuInSetup) confirmLaunch();
+    else openSetup('race');
   }
   if (e.code === 'Escape' && state === 'start' && menuInSetup) closeRaceSetup();
   if ((e.code === 'Escape' || e.code === 'KeyP') && (state === 'playing' || state === 'countdown')) pauseGame();

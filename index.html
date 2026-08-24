@@ -634,16 +634,16 @@
     <div id="race-setup-screen" class="overlay" style="display:none">
       <div class="setup-panel">
         <div class="setup-header">
-          <div class="eyebrow">/// RACE SELECTOR</div>
-          <h2>ALPINE PASS</h2>
-          <p>6.0 KM · 6 SECTORS · 3 TACTICAL RIVALS</p>
+          <div id="setup-eyebrow" class="eyebrow">/// RACE SELECTOR</div>
+          <h2 id="setup-title">ALPINE PASS</h2>
+          <p id="setup-subtitle">6.0 KM · 6 SECTORS · 3 TACTICAL RIVALS</p>
         </div>
-        <div class="race-setup" aria-label="Race difficulty">
-          <div class="route-chip">
+        <div class="race-setup" aria-label="Game difficulty or traffic density">
+          <div id="setup-row1-label" class="route-chip">
             <strong>DIFFICULTY</strong>
             <span>Rival AI skill and aggression</span>
           </div>
-          <div class="segmented-group difficulty-options" aria-label="AI difficulty">
+          <div id="setup-row1-options" class="segmented-group difficulty-options" aria-label="AI difficulty">
             <button class="difficulty-btn" data-difficulty="easy">ROOKIE</button>
             <button class="difficulty-btn active" data-difficulty="normal">SPORT</button>
             <button class="difficulty-btn" data-difficulty="hard">PRO</button>

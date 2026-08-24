@@ -18,7 +18,7 @@ export function createScene(canvas) {
   renderer.setPixelRatio(renderPixelRatio);
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = !IS_MOBILE;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.9;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -176,20 +176,22 @@ export function createScene(canvas) {
   }
   addEventListener('resize', resize);
 
-  // Adjust drawing-buffer resolution smoothly to lock 60 FPS across GPUs,
-  // avoiding prolonged low frame rates while maintaining maximum visual sharpness.
+  // Adjust drawing-buffer resolution smoothly to lock 60 FPS across all GPUs and laptops.
   let performanceTime = 0;
   let performanceFrames = 0;
   function updatePerformance(frameTime) {
     if (document.hidden) return;
     performanceTime += Math.min(frameTime, 0.1);
     performanceFrames += 1;
-    if (performanceTime < 2.0) return;
+    if (performanceTime < 0.5) return;
 
     const fps = performanceFrames / performanceTime;
     let nextRatio = renderPixelRatio;
-    if (fps < 54) nextRatio = Math.max(GRAPHICS.minPixelRatio, renderPixelRatio - 0.08);
-    else if (fps > 58) nextRatio = Math.min(Math.min(devicePixelRatio, GRAPHICS.maxPixelRatio), renderPixelRatio + 0.05);
+    if (fps < 48) {
+      nextRatio = Math.max(GRAPHICS.minPixelRatio, renderPixelRatio - (fps < 30 ? 0.25 : 0.1));
+    } else if (fps > 58 && renderPixelRatio < GRAPHICS.maxPixelRatio) {
+      nextRatio = Math.min(GRAPHICS.maxPixelRatio, renderPixelRatio + 0.04);
+    }
 
     if (Math.abs(nextRatio - renderPixelRatio) > 0.02) {
       renderPixelRatio = nextRatio;

@@ -42,6 +42,12 @@ export class HUD {
     this.timeIndicator = document.getElementById('time-indicator');
     this.finishCinematicUi = document.getElementById('finish-cinematic-ui');
 
+    this.setupEyebrow = document.getElementById('setup-eyebrow');
+    this.setupTitle = document.getElementById('setup-title');
+    this.setupSubtitle = document.getElementById('setup-subtitle');
+    this.setupRow1Label = document.getElementById('setup-row1-label');
+    this.confirmBtn = document.getElementById('confirm-race-btn');
+
     this.nearMissTimer = null;
     this.fpsFrames = 0;
     this.fpsElapsed = 0;
@@ -49,14 +55,14 @@ export class HUD {
     this._buildMinimapBase();
   }
 
-  bind({ startEndless, startRace, openRaceSetup, closeRaceSetup, restart, pause, resume, menu, selectDifficulty, selectTime, selectWeather, cycleTime, skipFinish }) {
-    document.getElementById('start-endless-btn').addEventListener('click', startEndless);
-    document.getElementById('start-race-btn').addEventListener('click', openRaceSetup);
-    document.getElementById('confirm-race-btn').addEventListener('click', startRace);
+  bind({ openSetup, confirmLaunch, closeRaceSetup, restart, pause, resume, menu, selectDifficulty, selectTime, selectWeather, cycleTime, skipFinish }) {
+    document.getElementById('start-endless-btn').addEventListener('click', () => openSetup('endless'));
+    document.getElementById('start-race-btn').addEventListener('click', () => openSetup('race'));
+    document.getElementById('confirm-race-btn').addEventListener('click', confirmLaunch);
     document.getElementById('setup-back-btn').addEventListener('click', closeRaceSetup);
     document.getElementById('restart-btn').addEventListener('click', restart);
     document.getElementById('pause-restart-btn').addEventListener('click', restart);
-    document.getElementById('race-again-btn').addEventListener('click', startRace);
+    document.getElementById('race-again-btn').addEventListener('click', () => openSetup('race'));
     document.getElementById('results-menu-btn').addEventListener('click', menu);
     this.pauseButton.addEventListener('click', pause);
     document.getElementById('resume-btn').addEventListener('click', resume);
@@ -128,7 +134,32 @@ export class HUD {
     this.timeIndicator.style.display = 'block';
   }
 
-  showRaceSetup() {
+  showRaceSetup(mode = 'race') {
+    if (mode === 'endless') {
+      if (this.setupEyebrow) this.setupEyebrow.textContent = '/// SURVIVAL MISSION';
+      if (this.setupTitle) this.setupTitle.textContent = 'ENDLESS HIGHWAY';
+      if (this.setupSubtitle) this.setupSubtitle.textContent = 'TRAFFIC DODGING · 3 LIVES · SCORE ATTACK';
+      if (this.setupRow1Label) {
+        this.setupRow1Label.innerHTML = '<strong>TRAFFIC</strong><span>Traffic density across lanes</span>';
+      }
+      const buttons = document.querySelectorAll('.difficulty-btn');
+      if (buttons[0]) buttons[0].textContent = 'RELAXED';
+      if (buttons[1]) buttons[1].textContent = 'STANDARD';
+      if (buttons[2]) buttons[2].textContent = 'RUSH HOUR';
+      if (this.confirmBtn) this.confirmBtn.innerHTML = 'LAUNCH HIGHWAY &#9654;';
+    } else {
+      if (this.setupEyebrow) this.setupEyebrow.textContent = '/// SPRINT RACE';
+      if (this.setupTitle) this.setupTitle.textContent = 'ALPINE PASS';
+      if (this.setupSubtitle) this.setupSubtitle.textContent = '6.0 KM · 6 SECTORS · 3 TACTICAL RIVALS';
+      if (this.setupRow1Label) {
+        this.setupRow1Label.innerHTML = '<strong>DIFFICULTY</strong><span>Rival AI skill and aggression</span>';
+      }
+      const buttons = document.querySelectorAll('.difficulty-btn');
+      if (buttons[0]) buttons[0].textContent = 'ROOKIE';
+      if (buttons[1]) buttons[1].textContent = 'SPORT';
+      if (buttons[2]) buttons[2].textContent = 'PRO';
+      if (this.confirmBtn) this.confirmBtn.innerHTML = 'START RACE &#9654;';
+    }
     this.startScreen.style.display = 'none';
     this.raceSetupScreen.style.display = 'flex';
     this.timeIndicator.style.display = 'none';
