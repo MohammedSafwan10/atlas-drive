@@ -18,6 +18,29 @@ import { FinishPresentation } from './finish.js';
 import { LoadingGate } from './loading.js';
 
 const canvas = document.getElementById('game');
+
+if (IS_MOBILE) {
+  document.getElementById('loading-screen')?.remove();
+  const blocker = document.getElementById('mobile-block-screen');
+  if (blocker) {
+    blocker.style.display = 'flex';
+    const copyBtn = document.getElementById('mobile-copy-btn');
+    const urlBox = blocker.querySelector('.mobile-url-box');
+    if (urlBox && window.location.host) urlBox.textContent = window.location.host;
+    copyBtn?.addEventListener('click', () => {
+      const url = window.location.href;
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+          copyBtn.textContent = 'LINK COPIED! ✓';
+          setTimeout(() => { copyBtn.textContent = '📋 COPY LINK FOR PC'; }, 2500);
+        }).catch(() => {
+          copyBtn.textContent = 'LINK COPIED! ✓';
+        });
+      }
+    });
+  }
+}
+
 const loadingGate = new LoadingGate();
 const { renderer, scene, camera, update: updateScene, updatePerformance, setTimeOfDay, setWeatherIntensity } = createScene(canvas);
 

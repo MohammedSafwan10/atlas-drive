@@ -1,7 +1,9 @@
-const touchCapable = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-const compactViewport = Math.min(screen.width, screen.height) < 900;
+const userAgent = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
+const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(userAgent);
+const touchCapable = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 1);
+const compactViewport = typeof window !== 'undefined' && Math.min(window.innerWidth, window.innerHeight) < 900;
 
-export const IS_MOBILE = touchCapable && compactViewport;
+export const IS_MOBILE = isMobileUA || (touchCapable && compactViewport);
 
 export const GRAPHICS = Object.freeze({
   // Modern phones have far denser displays than their CSS viewport. Rendering

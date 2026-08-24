@@ -152,6 +152,13 @@
     }
     .time-btn.active { color: #fff4da; border-color: #ffb54f; background: rgba(190,107,28,0.34); }
     .menu-subtitle { margin-top: -7px; color: #94a9bd; font-size: 13px; letter-spacing: 1.4px; text-transform: uppercase; }
+    .device-hint {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; margin: 4px 0 6px;
+      font-size: 12px; font-weight: 600; color: #7dd3fc;
+      background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 20px; backdrop-filter: blur(8px); letter-spacing: 0.3px;
+    }
     .controls-hint { margin-top: 4px; color: #72869a; font-size: 11px; letter-spacing: 0.6px; }
     .setup-panel {
       width: min(520px, calc(100vw - 36px)); padding: 24px; border-radius: 18px;
@@ -361,9 +368,56 @@
       top: 58px; right: max(10px, env(safe-area-inset-right)); width: 120px; padding: 5px;
     }
     body.touch #minimap { height: 78px; }
+
+    /* Desktop-only experience gate for mobile/tablet */
+    .mobile-blocker {
+      position: fixed; inset: 0; z-index: 999999;
+      display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(circle at 50% 30%, #0d1929 0%, #05080e 100%);
+      padding: 24px; text-align: center; color: #fff;
+    }
+    .mobile-block-card {
+      max-width: 440px; width: 100%;
+      background: rgba(13, 22, 35, 0.92);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 22px; padding: 36px 26px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.75), 0 0 50px rgba(14, 165, 233, 0.2);
+      backdrop-filter: blur(16px);
+    }
+    .mobile-block-badge {
+      display: inline-block; font-size: 11px; font-weight: 800;
+      letter-spacing: 2px; color: #38bdf8;
+      background: rgba(14, 165, 233, 0.15); border: 1px solid rgba(56, 189, 248, 0.35);
+      padding: 5px 16px; border-radius: 12px; margin-bottom: 18px;
+    }
+    .mobile-block-icon { font-size: 52px; margin-bottom: 14px; line-height: 1; }
+    .mobile-block-card h2 { font-size: 24px; font-weight: 900; letter-spacing: 1.4px; margin-bottom: 12px; color: #fff; }
+    .mobile-block-card p { font-size: 14px; line-height: 1.6; color: #94a9bd; margin-bottom: 20px; }
+    .mobile-block-tip { font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 8px; }
+    .mobile-url-box {
+      background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px; padding: 11px; font-family: ui-monospace, monospace; font-size: 14px;
+      color: #38bdf8; font-weight: 700; margin-bottom: 18px; word-break: break-all;
+    }
+    .copy-btn {
+      width: 100%; padding: 14px; font-size: 15px; font-weight: 700;
+      border-radius: 10px; cursor: pointer; letter-spacing: 0.5px;
+    }
   </style>
 </head>
 <body>
+  <div id="mobile-block-screen" class="mobile-blocker" style="display: none;">
+    <div class="mobile-block-card">
+      <div class="mobile-block-badge">DESKTOP EXCLUSIVE</div>
+      <div class="mobile-block-icon">💻</div>
+      <h2>PLAYABLE ON DESKTOP & PC ONLY</h2>
+      <p>Atlas Drive is built exclusively for desktop browsers to deliver high-performance 60 FPS WebGL graphics and precision keyboard racing.</p>
+      <div class="mobile-block-tip">Open this URL on your Mac, Windows PC, or Laptop:</div>
+      <div class="mobile-url-box">atlas.thumbeja.com</div>
+      <button id="mobile-copy-btn" class="btn copy-btn">📋 COPY LINK FOR PC</button>
+    </div>
+  </div>
+
   <div id="loading-screen" role="progressbar" aria-label="Loading Atlas Drive" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
     <div class="loading-panel">
       <div class="loading-eyebrow">ALPINE PASS · RACE CONTROL</div>
