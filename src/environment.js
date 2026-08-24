@@ -357,7 +357,7 @@ export class Environment {
         });
       });
 
-      // A few true 3D species near the mobile road greatly improve silhouettes;
+      // A few true 3D species near the road greatly improve silhouettes;
       // crossed-card trees remain in the distance to keep draw cost bounded.
       this.trees.push(...makePool(realTrees, IS_MOBILE ? 3 : 9, 8, 14.5, 16, 45));
 
@@ -423,7 +423,7 @@ export class Environment {
     geometry.translate(-(box.min.x + size.x / 2), -box.min.y, -(box.min.z + size.z / 2));
     const mesh = new THREE.InstancedMesh(geometry, prototype.material, count);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.castShadow = false;
+    mesh.castShadow = options.castShadow ?? (!IS_MOBILE);
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     const items = [];
