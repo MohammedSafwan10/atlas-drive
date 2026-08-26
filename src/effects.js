@@ -148,6 +148,16 @@ export class Effects {
     this.exhaustVelocity = new THREE.Vector3();
   }
 
+  warmUp(renderer, scene, camera) {
+    const visible = this.flames.map((flame) => flame.visible);
+    for (const flame of this.flames) flame.visible = true;
+    renderer.compile(scene, camera);
+    renderer.render(scene, camera);
+    for (let index = 0; index < this.flames.length; index++) {
+      this.flames[index].visible = visible[index];
+    }
+  }
+
   emitNitro(car) {
     // One small burst from each of the three central pipes.
     for (const ex of this.exhaustSockets) {

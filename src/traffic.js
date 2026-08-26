@@ -8,6 +8,8 @@ import { modeForSegment, rampLips, rampSurfaceLift } from './features.js';
 import { RACE_DIFFICULTIES, RACE_DISTANCE, RACER_NAMES } from './race.js';
 
 const GRAVITY = 24;
+const RIVAL_MODEL_URL = '/assets/ferrari-rival.glb';
+const RIVAL_SHADOW_PARTS = new Set(['body', 'wheel', 'tire']);
 
 // AI traffic: pooled vehicles (real Ferrari GLB clones with varied paint) in lanes at varied speeds
 export const COLORS = [0x2878d4, 0x20a15a, 0xe0a126, 0x777777, 0x8a2f2f, 0x3f3f46, 0xb8b8b8, 0x292f52];
@@ -119,9 +121,10 @@ export class Traffic {
         car.nitroGlow.position.set(0, 0.34, 2.66);
         car.nitroGlow.scale.set(1.15, 0.72, 1);
         car.nitroFX.add(car.nitroGlow);
-        car.nitroLight = new THREE.PointLight(0x2d8cff, 0.85, 5, 2);
-        car.nitroLight.position.set(0, 0.36, 2.48);
-        car.nitroFX.add(car.nitroLight);
+        // The additive flame and glow sprite provide the visible boost cue.
+        // A PointLight inside this hidden group changed the scene light count
+        // when boost first activated, forcing a new shader variant mid-race.
+        car.nitroLight = null;
       }
       car.nitroFX.visible = false;
       car.mesh.add(car.nitroFX);
@@ -181,15 +184,32 @@ export class Traffic {
     draco.setDecoderPath('/assets/draco/');
     const loader = new GLTFLoader();
     loader.setDRACOLoader(draco);
-    this.ready = new Promise((resolve) => loader.load('/assets/ferrari.glb', (gltf) => {
+    this.ready = new Promise((resolve) => loader.load(RIVAL_MODEL_URL, (gltf) => {
       const template = gltf.scene.children[0];
       const details = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.5 });
-      const glass = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.25, roughness: 0, transmission: 1.0 });
+      // The player keeps true transmission glass. Rivals use a visually close
+      // transparent surface, avoiding an extra full-scene transmission pass for
+      // every AI car on lower-power GPUs.
+      const glass = new THREE.MeshStandardMaterial({
+        color: 0x91a7bb,
+        metalness: 0.18,
+        roughness: 0.16,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false,
+      });
 
       for (let i = 0; i < this.cars.length; i++) {
         const car = this.cars[i];
         const model = template.clone(true);
-        model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
+        // Tiny cockpit and brake pieces do not change the road shadow, but each
+        // one would otherwise require another shadow draw. Keep the body/wheels
+        // as casters for the same visible silhouette at a fraction of the cost.
+        model.traverse((o) => {
+          if (!o.isMesh) return;
+          o.castShadow = RIVAL_SHADOW_PARTS.has(o.name);
+          o.receiveShadow = false;
+        });
 
         const paint = new THREE.MeshPhysicalMaterial({
           color: COLORS[i % COLORS.length], metalness: 1.0, roughness: 0.5,
@@ -223,14 +243,30 @@ export class Traffic {
   }
 
   warmUp(renderer, scene, camera) {
-    for (const car of this.cars) {
+    const saved = this.cars.map((car) => ({
+      visible: car.mesh.visible,
+      position: car.mesh.position.clone(),
+      rotation: car.mesh.rotation.clone(),
+      nitroVisible: car.nitroFX?.visible ?? false,
+    }));
+    for (let index = 0; index < this.cars.length; index++) {
+      const car = this.cars[index];
       car.mesh.visible = true;
-      car.mesh.position.set(0, -50, -500);
+      const z = -18 - index * 8;
+      const x = LANE_X[index % LANE_X.length];
+      roadPoint(z, x, 0, car.mesh.position);
+      car.mesh.rotation.set(roadPitch(z), roadYaw(z), 0);
+      if (car.nitroFX) car.nitroFX.visible = true;
     }
     renderer.compile(scene, camera);
-    for (const car of this.cars) {
-      car.mesh.visible = false;
-      car.mesh.position.set(0, -100, -9999);
+    renderer.render(scene, camera);
+    for (let index = 0; index < this.cars.length; index++) {
+      const car = this.cars[index];
+      const previous = saved[index];
+      car.mesh.visible = previous.visible;
+      car.mesh.position.copy(previous.position);
+      car.mesh.rotation.copy(previous.rotation);
+      if (car.nitroFX) car.nitroFX.visible = previous.nitroVisible;
     }
   }
 
@@ -652,7 +688,7 @@ export class Traffic {
           const time = performance.now() * 0.001;
           const pulse = 0.94 + Math.sin(time * 23 + i) * 0.08;
           car.nitroGlow.scale.set(1.15 * pulse, 0.72 * pulse, 1);
-          car.nitroLight.intensity = 0.72 + pulse * 0.28;
+          if (car.nitroLight) car.nitroLight.intensity = 0.72 + pulse * 0.28;
           for (let flame = 0; flame < car.nitroFlames.length; flame++) {
             const flicker = 0.9 + Math.sin(time * 29 + i * 2.1 + flame) * 0.12;
             car.nitroFlames[flame].scale.set(flicker, flicker, 0.88 + flicker * 0.22);

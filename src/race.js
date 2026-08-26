@@ -126,6 +126,7 @@ export class RaceCourse {
     // sitting directly above the chase camera at the countdown.
     placeOnRoad(start, -14);
     this.group.add(start);
+    this.start = start;
 
     const finish = makeGantry('FINISH', '#ffbf28');
     finish.add(makeRoadStripe());
@@ -141,5 +142,14 @@ export class RaceCourse {
 
   setVisible(visible) {
     this.group.visible = visible;
+    if (visible) this.start.visible = true;
+  }
+
+  update(playerZ) {
+    if (!this.group.visible) return;
+    // The chase camera crosses the start plane a few metres after the car.
+    // Retire the gantry once the player clears it so impact shake cannot put
+    // its banner inside the camera and create a full-width cyan clipping bar.
+    this.start.visible = playerZ > -16;
   }
 }

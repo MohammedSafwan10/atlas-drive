@@ -74,6 +74,7 @@ let lives = 3;
 const MAX_LIVES = 3;
 let invulnerable = 0; // seconds of blink after a hit
 let impactShake = 0;
+let raceImpactCooldown = 0;
 let raceCountdown = 0;
 let countdownStage = 0;
 let raceTime = 0;
@@ -112,6 +113,7 @@ function resetCommon() {
   lives = MAX_LIVES;
   invulnerable = 0;
   impactShake = 0;
+  raceImpactCooldown = 0;
   hud.setLives(lives);
   hud.hideStart();
   hud.hideGameOver();
@@ -257,7 +259,7 @@ function hit() {
   car.x = THREE.MathUtils.clamp(car.x + (car.x >= 0 ? 0.75 : -0.75), -4.8, 4.8);
   audio.crash();
   impactShake = lives <= 0 ? 0.42 : 0.28;
-  if (navigator.vibrate) navigator.vibrate(lives <= 0 ? [90, 45, 120] : 70);
+  if (IS_MOBILE && navigator.vibrate) navigator.vibrate(lives <= 0 ? [90, 45, 120] : 70);
   hud.setLives(lives, MAX_LIVES);
   hud.crashFlash();
   if (lives <= 0) {
@@ -271,13 +273,17 @@ function hit() {
 }
 
 function raceCollision(rival) {
-  if (state !== 'playing') return;
+  if (state !== 'playing' || raceImpactCooldown > 0) return;
+  raceImpactCooldown = 0.9;
   car.speed *= 0.72;
-  car.x += car.x <= rival.x ? -0.42 : 0.42;
+  const separation = car.x <= rival.x ? -1 : 1;
+  car.x = THREE.MathUtils.clamp(car.x + separation * 0.78, -4.9, 4.9);
+  rival.x = THREE.MathUtils.clamp(rival.x - separation * 0.22, -4.6, 4.6);
+  rival.targetX = rival.x;
   impactShake = 0.2;
   audio.crash();
   hud.crashFlash();
-  if (navigator.vibrate) navigator.vibrate(55);
+  if (IS_MOBILE && navigator.vibrate) navigator.vibrate(55);
 }
 
 function finishRace() {
@@ -361,6 +367,7 @@ function tick() {
   const frameTime = clock.getDelta();
   diagnostics.recordFrame(frameTime);
   const dt = Math.min(frameTime, 0.05);
+  raceImpactCooldown = Math.max(0, raceImpactCooldown - dt);
 
   if (suspended) return;
   updatePerformance(frameTime);
@@ -434,6 +441,7 @@ function tick() {
       raceTime += dt;
       raceTopSpeed = Math.max(raceTopSpeed, car.kmh);
       traffic.updateRace(dt, car, true, raceCollision);
+      raceCourse.update(car.z);
       const progress = Math.max(0, -car.z);
       while (playerCheckpoint < RACE_CHECKPOINTS.length - 1 && progress >= RACE_CHECKPOINTS[playerCheckpoint]) {
         playerCheckpoint += 1;
@@ -540,6 +548,7 @@ async function boot() {
   spawnWorldPrepared = true;
   traffic.resetRace(raceDifficulty);
   raceCourse.setVisible(true);
+  effects.warmUp(renderer, scene, camera);
   traffic.warmUp(renderer, scene, camera);
   traffic.resetRace(raceDifficulty);
   setTimeOfDay(timeOfDay.update(0), true);
