@@ -137,12 +137,27 @@
 
     #flash {
       position: absolute; inset: 0; background: rgba(255, 60, 60, 0.45); opacity: 0;
-      pointer-events: none; will-change: opacity; transition: opacity 0.14s ease-out;
+      pointer-events: none; will-change: opacity; transform: translateZ(0); contain: strict;
+      transition: opacity 0.14s ease-out;
     }
     #weather-flash {
       position: absolute; inset: 0; background: #d9e8ff; opacity: 0;
-      pointer-events: none; mix-blend-mode: screen;
+      pointer-events: none; mix-blend-mode: screen; will-change: opacity;
+      transform: translateZ(0); contain: strict;
     }
+
+    #diagnostics-panel {
+      position: fixed; inset: 0; z-index: 1200; display: none; align-items: center; justify-content: center;
+      padding: 24px; pointer-events: auto; background: rgba(2, 6, 12, 0.82);
+    }
+    .diagnostics-card {
+      width: min(780px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto;
+      padding: 24px; border-radius: 16px; background: #08111d; color: #d7e8f7;
+      border: 1px solid rgba(0, 229, 255, 0.42); box-shadow: 0 24px 80px rgba(0,0,0,.75);
+    }
+    .diagnostics-card h2 { font-family: 'Chakra Petch', sans-serif; color: #00e5ff; margin-bottom: 12px; }
+    #diagnostics-output { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 ui-monospace, monospace; }
+    .diagnostics-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 
     .overlay {
       position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -555,6 +570,17 @@
     </div>
   </div>
   <canvas id="game"></canvas>
+
+  <div id="diagnostics-panel" role="dialog" aria-modal="true" aria-label="Performance diagnostics">
+    <div class="diagnostics-card">
+      <h2>PERFORMANCE DIAGNOSTICS</h2>
+      <pre id="diagnostics-output"></pre>
+      <div class="diagnostics-actions">
+        <button id="diagnostics-close" class="btn secondary">CLOSE</button>
+        <button id="diagnostics-copy" class="btn">COPY REPORT</button>
+      </div>
+    </div>
+  </div>
 
   <div id="hud">
     <div id="endless-hud" class="hud-top-left">

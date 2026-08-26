@@ -16,6 +16,7 @@ import { TimeOfDay, TIME_MODES } from './timeOfDay.js';
 import { WeatherSystem, WEATHER_MODES } from './weather.js';
 import { FinishPresentation } from './finish.js';
 import { LoadingGate } from './loading.js';
+import { PerformanceDiagnostics } from './diagnostics.js';
 
 const canvas = document.getElementById('game');
 
@@ -51,6 +52,7 @@ const traffic = new Traffic(scene);
 const raceCourse = new RaceCourse(scene);
 const effects = new Effects(scene, camera, car);
 const hud = new HUD();
+const diagnostics = new PerformanceDiagnostics(renderer);
 const input = new Input();
 const audio = new GameAudio();
 const timeOfDay = new TimeOfDay(setTimeOfDay);
@@ -328,6 +330,10 @@ hud.bind({
   skipFinish,
 });
 addEventListener('keydown', (e) => {
+  if (e.code === 'F8') {
+    e.preventDefault();
+    diagnostics.toggle();
+  }
   if (e.code === 'KeyR' && (state === 'crashed' || state === 'finished')) restartGame();
   if (e.code === 'Enter' && state === 'start') {
     if (menuInSetup) confirmLaunch();
@@ -353,6 +359,7 @@ document.addEventListener('visibilitychange', () => {
 function tick() {
   requestAnimationFrame(tick);
   const frameTime = clock.getDelta();
+  diagnostics.recordFrame(frameTime);
   const dt = Math.min(frameTime, 0.05);
 
   if (suspended) return;
@@ -526,12 +533,15 @@ async function boot() {
   // loader can disappear. Then compile the exact starting grid the player
   // will see, so the first race click cannot trigger shader/texture uploads.
   await Promise.all([car.ready, traffic.ready, environment.ready, audio.preload()]);
+  await hud.warmUpImpactLayers();
   car.reset();
   road.reset(0);
   environment.reset(0);
   spawnWorldPrepared = true;
   traffic.resetRace(raceDifficulty);
   raceCourse.setVisible(true);
+  traffic.warmUp(renderer, scene, camera);
+  traffic.resetRace(raceDifficulty);
   setTimeOfDay(timeOfDay.update(0), true);
   await loadingGate.reveal(renderer, scene, camera);
   traffic.reset();
@@ -539,6 +549,7 @@ async function boot() {
   state = 'start';
   clock.getDelta();
   hud.showStart();
+  if (previewParams.has('diagnostics')) diagnostics.show();
 }
 
 boot().catch((error) => {

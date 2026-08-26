@@ -33,6 +33,7 @@ export class GameAudio {
     this.recordedRainGain = null;
     this.recordedRainSource = null;
     this.thunderBuffers = [];
+    this.crashVoices = [];
     this.lastKmh = 0;
     this.muteButton = document.getElementById('sound-btn');
     this.muteButton?.addEventListener('click', () => this.toggleMute());
@@ -135,8 +136,28 @@ export class GameAudio {
       this.recordedRainSource.start();
     }
     this.thunderBuffers = weatherBuffers.slice(1).filter(Boolean);
+    // Crash synthesis used to build its complete Web Audio graph on the first
+    // collision. Keep a small one-shot pool ready so impact feedback starts
+    // without allocating audio nodes on the render-critical collision frame.
+    this.crashVoices = Array.from({ length: 4 }, () => this._createCrashVoice());
     this.ready = true;
     this.ui(520);
+  }
+
+  _createCrashVoice() {
+    const noise = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    const thud = this.context.createOscillator();
+    const thudGain = this.context.createGain();
+    noise.buffer = this.noiseBuffer;
+    filter.type = 'lowpass';
+    thud.type = 'triangle';
+    gain.gain.value = 0;
+    thudGain.gain.value = 0;
+    noise.connect(filter).connect(gain).connect(this.master);
+    thud.connect(thudGain).connect(this.master);
+    return { noise, filter, gain, thud, thudGain };
   }
 
   _makeNoiseBuffer(seconds) {
@@ -208,29 +229,26 @@ export class GameAudio {
     if (!this.ready || this.muted || !this.context || this.context.state !== 'running') return;
     try {
       const now = this.context.currentTime;
-      const noise = this.context.createBufferSource();
-      const filter = this.context.createBiquadFilter();
-      const gain = this.context.createGain();
-      noise.buffer = this.noiseBuffer;
-      filter.type = 'lowpass';
+      const voice = this.crashVoices.shift() || this._createCrashVoice();
+      const { noise, filter, gain, thud, thudGain } = voice;
       filter.frequency.setValueAtTime(1800, now);
       filter.frequency.linearRampToValueAtTime(120, now + 0.32);
       gain.gain.setValueAtTime(0.72, now);
       gain.gain.linearRampToValueAtTime(0, now + 0.34);
-      noise.connect(filter).connect(gain).connect(this.master);
       noise.start(now);
       noise.stop(now + 0.36);
 
-      const thud = this.context.createOscillator();
-      const thudGain = this.context.createGain();
-      thud.type = 'triangle';
       thud.frequency.setValueAtTime(105, now);
       thud.frequency.linearRampToValueAtTime(38, now + 0.22);
       thudGain.gain.setValueAtTime(0.42, now);
       thudGain.gain.linearRampToValueAtTime(0, now + 0.24);
-      thud.connect(thudGain).connect(this.master);
       thud.start(now);
       thud.stop(now + 0.25);
+      setTimeout(() => {
+        if (this.context && this.crashVoices.length < 4) {
+          this.crashVoices.push(this._createCrashVoice());
+        }
+      }, 420);
     } catch (e) {
       console.warn('Audio crash effect failed', e);
     }

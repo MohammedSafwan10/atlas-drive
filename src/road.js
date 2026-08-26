@@ -63,6 +63,19 @@ function makeConcreteMaterial() {
   });
 }
 
+function makeDashTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 4;
+  canvas.height = 64;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, 4, 27);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, SEG_LEN / 8);
+  return texture;
+}
+
 function makeRibbon(centerZ, left, right, lift = 0.02, length = SEG_LEN, step = STEP, liftProfile = null) {
   const rows = Math.round(length / step) + 1;
   const geometry = new THREE.BufferGeometry();
@@ -277,6 +290,10 @@ export class Road {
     const materials = {
       asphalt: asphaltMaterial,
       line: new THREE.MeshStandardMaterial({ color: 0xf5f4e9, roughness: 0.55, emissive: 0x181816 }),
+      dashedLine: new THREE.MeshStandardMaterial({
+        color: 0xf5f4e9, roughness: 0.55, emissive: 0x181816,
+        alphaMap: makeDashTexture(), alphaTest: 0.5,
+      }),
       rail: new THREE.MeshStandardMaterial({ color: 0xbcc4cb, roughness: 0.28, metalness: 0.92, side: THREE.DoubleSide }),
       pole: new THREE.MeshStandardMaterial({ color: 0x545b63, roughness: 0.62, metalness: 0.55 }),
       reflector: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffd9a0, emissiveIntensity: 1.8 }),
@@ -307,7 +324,7 @@ export class Road {
     this.materials = materials;
 
     for (let i = 0; i < SEG_COUNT; i++) {
-      const segment = { centerZ: -i * SEG_LEN, ribbons: [], fixtures: [] };
+      const segment = { centerZ: -i * SEG_LEN, ribbons: [], fixtures: [], fixtureBatches: [] };
       const addRibbon = (geometry, material, shadows = false) => {
         const mesh = new THREE.Mesh(geometry, material);
         mesh.receiveShadow = true;
@@ -325,14 +342,12 @@ export class Road {
         if (IS_MOBILE) {
           addRibbon(makeRibbon(segment.centerZ, lane - 0.055, lane + 0.055, 0.04), materials.line).userData.kind = 'line';
         } else {
-          for (let offset = -SEG_LEN / 2 + 3; offset < SEG_LEN / 2; offset += 8) {
-            const dash = addRibbon(makeRibbon(segment.centerZ + offset, lane - 0.08, lane + 0.08, 0.04, 3.4, 1.7), materials.line);
-            dash.geometry.userData.shortOffset = offset;
-            dash.userData.kind = 'line';
-          }
+          addRibbon(makeRibbon(segment.centerZ, lane - 0.08, lane + 0.08, 0.04), materials.dashedLine).userData.kind = 'line';
         }
       }
 
+      const railEntriesBySide = { '-1': [], '1': [] };
+      const fenceEntries = [];
       for (const side of [-1, 1]) {
         addRibbon(makeVerticalRibbon(segment.centerZ, side * 7, 0.54, 0.68), materials.rail, true).userData.kind = 'rail';
         if (!IS_MOBILE) {
@@ -342,26 +357,29 @@ export class Road {
         }
 
         for (let offset = -SEG_LEN / 2 + 8; offset < SEG_LEN / 2; offset += IS_MOBILE ? 32 : 8) {
-          const post = new THREE.Group();
-          const stem = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.82, 0.18), materials.rail);
-          stem.position.y = 0.41;
-          post.add(stem);
-          if (!IS_MOBILE) {
-            const reflector = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.11, 0.18), materials.reflector);
-            reflector.position.set(-side * 0.07, 0.78, 0);
-            post.add(reflector);
-          }
-          this.group.add(post);
-          segment.fixtures.push({ object: post, offset, lateral: side * 7, height: 0, kind: 'railpost' });
+          railEntriesBySide[String(side)].push({ offset, lateral: side * 7, height: 0 });
         }
         if (!IS_MOBILE) {
           for (let offset = -SEG_LEN / 2 + 6; offset < SEG_LEN / 2; offset += 12) {
-            const fencePost = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.35, 0.12), materials.wood);
-            this.group.add(fencePost);
-            segment.fixtures.push({ object: fencePost, offset, lateral: side * 18, height: 0.68, kind: 'fencepost' });
+            fenceEntries.push({ offset, lateral: side * 18, height: 0.68 });
           }
         }
       }
+      for (const side of [-1, 1]) {
+        const components = [{
+          geometry: new THREE.BoxGeometry(0.18, 0.82, 0.18), material: materials.rail,
+          position: new THREE.Vector3(0, 0.41, 0),
+        }];
+        if (!IS_MOBILE) components.push({
+          geometry: new THREE.BoxGeometry(0.06, 0.11, 0.18), material: materials.reflector,
+          position: new THREE.Vector3(-side * 0.07, 0.78, 0),
+        });
+        this._createFixtureBatch(segment, railEntriesBySide[String(side)], components, 'railpost');
+      }
+      if (!IS_MOBILE) this._createFixtureBatch(segment, fenceEntries, [{
+        geometry: new THREE.BoxGeometry(0.12, 1.35, 0.12), material: materials.wood,
+        position: new THREE.Vector3(0, 0, 0),
+      }], 'fencepost');
 
       // ---- Feature decorations (toggled per segment mode in _updateSegment) ----
 
@@ -479,6 +497,39 @@ export class Road {
     this.materials.reflector.emissiveIntensity = 1.2 + night * 4.2;
     this.materials.sign.emissiveIntensity = 0.35 + night * 1.35;
     this.materials.line.emissiveIntensity = 0.28 + night * 0.72;
+    this.materials.dashedLine.emissiveIntensity = this.materials.line.emissiveIntensity;
+  }
+
+  _createFixtureBatch(segment, entries, components, kind) {
+    if (!entries.length) return;
+    const meshes = components.map((component) => {
+      const mesh = new THREE.InstancedMesh(component.geometry, component.material, entries.length);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.frustumCulled = false;
+      this.group.add(mesh);
+      const local = new THREE.Object3D();
+      local.position.copy(component.position);
+      local.updateMatrix();
+      return { mesh, localMatrix: local.matrix.clone() };
+    });
+    segment.fixtureBatches.push({ entries, meshes, kind });
+  }
+
+  _updateFixtureBatch(batch, centerZ, visible) {
+    for (const { mesh } of batch.meshes) mesh.visible = visible;
+    if (!visible) return;
+    const anchor = new THREE.Object3D();
+    const matrix = new THREE.Matrix4();
+    for (let index = 0; index < batch.entries.length; index++) {
+      const entry = batch.entries[index];
+      placeOnRoad(anchor, centerZ + entry.offset, entry.lateral, entry.height);
+      anchor.updateMatrix();
+      for (const component of batch.meshes) {
+        matrix.multiplyMatrices(anchor.matrix, component.localMatrix);
+        component.mesh.setMatrixAt(index, matrix);
+      }
+    }
+    for (const { mesh } of batch.meshes) mesh.instanceMatrix.needsUpdate = true;
   }
 
   setWetness(factor) {
@@ -516,6 +567,9 @@ export class Road {
     for (const fixture of segment.fixtures) {
       fixture.object.visible = FIXTURE_MODES[fixture.kind].includes(mode);
       placeOnRoad(fixture.object, centerZ + fixture.offset, fixture.lateral, fixture.height);
+    }
+    for (const batch of segment.fixtureBatches) {
+      this._updateFixtureBatch(batch, centerZ, FIXTURE_MODES[batch.kind].includes(mode));
     }
   }
 

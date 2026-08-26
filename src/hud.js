@@ -118,6 +118,17 @@ export class HUD {
     }, 120);
   }
 
+  async warmUpImpactLayers() {
+    const layers = [this.flashEl, document.getElementById('weather-flash')].filter(Boolean);
+    for (const layer of layers) layer.style.opacity = '0.001';
+    // Force allocation while the opaque loader covers the page, then retain
+    // the promoted layers for instant compositor-only collision flashes.
+    void this.flashEl?.offsetWidth;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    for (const layer of layers) layer.style.opacity = '0';
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+
   showStart() {
     this.startScreen.style.display = 'flex';
     this.raceSetupScreen.style.display = 'none';

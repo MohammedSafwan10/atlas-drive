@@ -319,6 +319,22 @@ export class Environment {
       return pool;
     };
 
+    const makeInstancedModelPools = (prototypes, count, heightMin, heightMax, minDist, maxDist) => {
+      if (!prototypes.length || count <= 0) return [];
+      const pools = [];
+      for (let prototypeIndex = 0; prototypeIndex < prototypes.length; prototypeIndex++) {
+        const instanceCount = Math.floor(count / prototypes.length)
+          + (prototypeIndex < count % prototypes.length ? 1 : 0);
+        if (instanceCount > 0) {
+          pools.push(this._makeInstancedModelPool(
+            prototypes[prototypeIndex], instanceCount,
+            heightMin, heightMax, minDist, maxDist,
+          ));
+        }
+      }
+      return pools;
+    };
+
     // Lightweight instanced crossed cards eliminate hundreds of draw calls.
     treePrototypes.forEach((prototype) => {
       const mergedTree = mergeStaticModel(prototype);
@@ -346,15 +362,13 @@ export class Environment {
       grasses.forEach((model) => configurePBR(model, { shadows: false, foliage: true }));
       realTrees.forEach((model) => configurePBR(model, { shadows: false, foliage: true }));
 
-      // A few true 3D species near the road greatly improve silhouettes;
-      // crossed-card trees remain instanced to keep draw calls ultra-low.
-      this.trees.push(...makePool(realTrees, IS_MOBILE ? 3 : 8, 8, 14.5, 16, 45));
-
-      this.props = [
-        ...makePool(boulders, scaledCount(14, 6), 1.4, 2.8, 13, 42),
-        ...makePool(rocks, scaledCount(24, 10), 0.45, 1.15, 10, 25),
-        ...makePool(ferns, scaledCount(30, 12), 0.55, 1.05, 12, 30),
-      ];
+      // Preserve every source mesh and material, but draw repeated scans as
+      // hardware instances. This removes hundreds of per-object draw calls
+      // without simplifying their geometry, textures, PBR or silhouettes.
+      makeInstancedModelPools(realTrees, IS_MOBILE ? 3 : 8, 8, 14.5, 16, 45);
+      makeInstancedModelPools(boulders, scaledCount(14, 6), 1.4, 2.8, 13, 42);
+      makeInstancedModelPools(rocks, scaledCount(24, 10), 0.45, 1.15, 10, 25);
+      makeInstancedModelPools(ferns, scaledCount(30, 12), 0.55, 1.05, 12, 30);
       if (grasses[0]) this._makeInstancedPool(grasses[0], scaledCount(72, 28), 0.3, 0.64, 13, 28);
 
       const bush = new THREE.Mesh(
@@ -434,6 +448,55 @@ export class Environment {
     return pool;
   }
 
+  _makeInstancedModelPool(prototype, count, heightMin, heightMax, minDist, maxDist) {
+    prototype.updateMatrixWorld(true);
+    const parts = [];
+    const bounds = new THREE.Box3();
+    prototype.traverse((object) => {
+      if (!object.isMesh || object.isSkinnedMesh || !object.geometry || !object.material) return;
+      const geometry = object.geometry.clone();
+      geometry.applyMatrix4(object.matrixWorld);
+      geometry.computeBoundingBox();
+      bounds.union(geometry.boundingBox);
+      parts.push({
+        geometry,
+        material: object.material,
+        castShadow: object.castShadow,
+        receiveShadow: object.receiveShadow,
+      });
+    });
+    if (!parts.length || bounds.isEmpty()) return null;
+
+    const size = bounds.getSize(new THREE.Vector3());
+    const centerX = (bounds.min.x + bounds.max.x) * 0.5;
+    const centerZ = (bounds.min.z + bounds.max.z) * 0.5;
+    const meshes = parts.map((part) => {
+      part.geometry.translate(-centerX, -bounds.min.y, -centerZ);
+      const mesh = new THREE.InstancedMesh(part.geometry, part.material, count);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.castShadow = part.castShadow;
+      mesh.receiveShadow = part.receiveShadow;
+      mesh.frustumCulled = false;
+      this.group.add(mesh);
+      return mesh;
+    });
+
+    const items = [];
+    for (let i = 0; i < count; i++) {
+      const side = i % 2 ? 1 : -1;
+      items.push({
+        z: 30 - (i / count) * 400 + (Math.random() - 0.5) * 18,
+        lateral: side * (minDist + Math.random() * (maxDist - minDist)),
+        scale: (heightMin + Math.random() * (heightMax - heightMin)) / Math.max(size.y, 0.001),
+        yaw: Math.random() * Math.PI * 2,
+      });
+    }
+    const pool = { meshes, items, minDist, maxDist, widthScale: 1 };
+    this.instancedPools.push(pool);
+    this._updateInstancedPool(pool, 0, true);
+    return pool;
+  }
+
   _updateInstancedPool(pool, playerZ, reset) {
     const matrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
@@ -455,10 +518,14 @@ export class Environment {
       quaternion.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, item.yaw);
       scale.set(item.scale * pool.widthScale, item.scale, item.scale * pool.widthScale);
       matrix.compose(position, quaternion, scale);
-      pool.mesh.setMatrixAt(i, matrix);
+      if (pool.mesh) pool.mesh.setMatrixAt(i, matrix);
+      else for (const mesh of pool.meshes) mesh.setMatrixAt(i, matrix);
       changed = true;
     }
-    if (changed) pool.mesh.instanceMatrix.needsUpdate = true;
+    if (changed) {
+      if (pool.mesh) pool.mesh.instanceMatrix.needsUpdate = true;
+      else for (const mesh of pool.meshes) mesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   update(playerZ) {
