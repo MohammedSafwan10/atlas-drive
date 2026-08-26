@@ -59,15 +59,6 @@ function makeRainMaterial() {
   });
 }
 
-function cylinderBetween(a, b, radius, material) {
-  const direction = b.clone().sub(a);
-  const length = direction.length();
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.72, length, 5, 1), material);
-  mesh.position.copy(a).add(b).multiplyScalar(0.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  return mesh;
-}
-
 function makeMistTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 64;
@@ -95,9 +86,16 @@ export class WeatherSystem {
     this.lightningTimer = 8 + Math.random() * 10;
     this.lightningEnvelope = 0;
     this.boltAge = Number.POSITIVE_INFINITY;
-    this.boltGroup = null;
     this.thunderTimer = -1;
     this.wind = new THREE.Vector3(0.16, 0, 0.04);
+    this.matrixDummy = new THREE.Object3D();
+    this.sprayOrigin = new THREE.Vector3();
+    this.boltDirection = new THREE.Vector3();
+    this.boltMidpoint = new THREE.Vector3();
+    this.boltScale = new THREE.Vector3();
+    this.boltQuaternion = new THREE.Quaternion();
+    this.boltMatrix = new THREE.Matrix4();
+    this.boltUp = new THREE.Vector3(0, 1, 0);
 
     this.rainCount = IS_MOBILE ? 280 : 1040;
     const geometry = new THREE.PlaneGeometry(IS_MOBILE ? 0.036 : 0.045, IS_MOBILE ? 0.92 : 1.28);
@@ -159,6 +157,32 @@ export class WeatherSystem {
     this.lightning = new THREE.DirectionalLight(0xd9e8ff, 0);
     this.lightning.position.set(-25, 70, -40);
     scene.add(this.lightning);
+
+    // A strike used to allocate dozens of cylinder geometries and materials at
+    // the exact moment it appeared. Keep one GPU-resident cylinder and instance
+    // it for the core and glow so a strike only updates matrices.
+    this.maxBoltSegments = IS_MOBILE ? 36 : 64;
+    const boltGeometry = new THREE.CylinderGeometry(1, 0.72, 1, 5, 1);
+    this.boltCoreMaterial = new THREE.MeshBasicMaterial({
+      color: 0xeaf4ff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending,
+      depthWrite: false, toneMapped: false,
+    });
+    this.boltGlowMaterial = new THREE.MeshBasicMaterial({
+      color: 0x8cbcff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending,
+      depthWrite: false, toneMapped: false,
+    });
+    this.boltCore = new THREE.InstancedMesh(boltGeometry, this.boltCoreMaterial, this.maxBoltSegments);
+    this.boltGlow = new THREE.InstancedMesh(boltGeometry, this.boltGlowMaterial, this.maxBoltSegments);
+    this.boltCore.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.boltGlow.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.boltCore.frustumCulled = false;
+    this.boltGlow.frustumCulled = false;
+    this.boltCore.count = 0;
+    this.boltGlow.count = 0;
+    this.boltGroup = new THREE.Group();
+    this.boltGroup.visible = false;
+    this.boltGroup.add(this.boltGlow, this.boltCore);
+    scene.add(this.boltGroup);
   }
 
   setMode(mode) {
@@ -191,7 +215,7 @@ export class WeatherSystem {
   }
 
   _updateRain(dt, exposed = true) {
-    const dummy = new THREE.Object3D();
+    const dummy = this.matrixDummy;
     const visible = Math.floor(this.rainCount * clamp01((this.intensity - 0.08) / 0.92));
     this.rain.visible = visible > 0 && exposed;
     this.rain.count = visible;
@@ -226,7 +250,7 @@ export class WeatherSystem {
   }
 
   _updateGroundSplashes(dt, car, exposed) {
-    const dummy = new THREE.Object3D();
+    const dummy = this.matrixDummy;
     if (exposed && this.intensity > 0.22) {
       this.splashAccum += dt * (IS_MOBILE ? 9 : 23) * this.intensity;
       while (this.splashAccum >= 1) {
@@ -242,6 +266,7 @@ export class WeatherSystem {
       const progress = 1 - splash.life / splash.maxLife;
       const scale = 0.45 + progress * 2.7;
       dummy.position.copy(splash.point);
+      dummy.rotation.set(0, 0, 0);
       dummy.scale.set(scale, scale, scale);
       dummy.updateMatrix();
       this.splashes.setMatrixAt(visible++, dummy.matrix);
@@ -254,7 +279,7 @@ export class WeatherSystem {
   _emitSpray(car) {
     if (car.speed < 12 || car.airborne || this.intensity < 0.25) return;
     const emitCount = IS_MOBILE ? 1 : 2;
-    const origin = new THREE.Vector3();
+    const origin = this.sprayOrigin;
     for (let n = 0; n < emitCount; n++) {
       const i = this.sprayCursor;
       this.sprayCursor = (this.sprayCursor + 1) % this.sprayCount;
@@ -285,33 +310,19 @@ export class WeatherSystem {
     this.spray.visible = this.intensity > 0.2;
   }
 
-  _disposeBolt() {
-    if (!this.boltGroup) return;
-    this.scene.remove(this.boltGroup);
-    const geometries = new Set();
-    const materials = new Set();
-    this.boltGroup.traverse((object) => {
-      if (object.geometry) geometries.add(object.geometry);
-      if (object.material) materials.add(object.material);
-    });
-    geometries.forEach((geometry) => geometry.dispose());
-    materials.forEach((material) => material.dispose());
-    this.boltGroup = null;
+  _setBoltInstance(mesh, index, a, b, radius) {
+    this.boltDirection.subVectors(b, a);
+    const length = this.boltDirection.length();
+    this.boltMidpoint.copy(a).add(b).multiplyScalar(0.5);
+    this.boltQuaternion.setFromUnitVectors(this.boltUp, this.boltDirection.normalize());
+    this.boltScale.set(radius, length, radius);
+    this.boltMatrix.compose(this.boltMidpoint, this.boltQuaternion, this.boltScale);
+    mesh.setMatrixAt(index, this.boltMatrix);
   }
 
   _spawnLightningBolt() {
-    this._disposeBolt();
-    const group = new THREE.Group();
-    const core = new THREE.MeshBasicMaterial({
-      color: 0xeaf4ff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending,
-      depthWrite: false, toneMapped: false,
-    });
-    const glow = new THREE.MeshBasicMaterial({
-      color: 0x8cbcff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending,
-      depthWrite: false, toneMapped: false,
-    });
-    core.userData.baseOpacity = 1;
-    glow.userData.baseOpacity = 0.16;
+    let coreCount = 0;
+    let glowCount = 0;
     const forward = new THREE.Vector3();
     this.camera.getWorldDirection(forward);
     forward.y = 0;
@@ -333,8 +344,12 @@ export class WeatherSystem {
       ));
     }
     for (let i = 1; i < points.length; i++) {
-      group.add(cylinderBetween(points[i - 1], points[i], IS_MOBILE ? 0.065 : 0.08, core));
-      if (!IS_MOBILE) group.add(cylinderBetween(points[i - 1], points[i], 0.34, glow));
+      if (coreCount < this.maxBoltSegments) {
+        this._setBoltInstance(this.boltCore, coreCount++, points[i - 1], points[i], IS_MOBILE ? 0.065 : 0.08);
+      }
+      if (!IS_MOBILE && glowCount < this.maxBoltSegments) {
+        this._setBoltInstance(this.boltGlow, glowCount++, points[i - 1], points[i], 0.34);
+      }
       if (i > 2 && i < points.length - 3 && Math.random() < 0.26) {
         let branchStart = points[i].clone();
         const branchSegments = 3 + Math.floor(Math.random() * 3);
@@ -344,13 +359,32 @@ export class WeatherSystem {
             -(3 + Math.random() * 5),
             (Math.random() - 0.5) * 4,
           ));
-          group.add(cylinderBetween(branchStart, branchEnd, IS_MOBILE ? 0.025 : 0.038, core));
+          if (coreCount < this.maxBoltSegments) {
+            this._setBoltInstance(this.boltCore, coreCount++, branchStart, branchEnd, IS_MOBILE ? 0.025 : 0.038);
+          }
           branchStart = branchEnd;
         }
       }
     }
-    this.boltGroup = group;
-    this.scene.add(group);
+    this.boltCore.count = coreCount;
+    this.boltGlow.count = glowCount;
+    this.boltCore.instanceMatrix.needsUpdate = true;
+    this.boltGlow.instanceMatrix.needsUpdate = true;
+    this.boltGroup.visible = true;
+  }
+
+  warmUp(renderer, scene, camera) {
+    const timer = this.lightningTimer;
+    this._spawnLightningBolt();
+    this.boltCoreMaterial.opacity = 1;
+    this.boltGlowMaterial.opacity = 0.16;
+    renderer.compile(scene, camera);
+    renderer.render(scene, camera);
+    this.boltGroup.visible = false;
+    this.boltAge = Number.POSITIVE_INFINITY;
+    this.lightningEnvelope = 0;
+    this.lightning.intensity = 0;
+    this.lightningTimer = timer;
   }
 
   _updateLightning(dt) {
@@ -370,15 +404,10 @@ export class WeatherSystem {
     else if (this.boltAge < 0.14) this.lightningEnvelope = 0.12;
     else if (this.boltAge < 0.24) this.lightningEnvelope = 0.62;
     else this.lightningEnvelope = Math.max(0, 0.45 - (this.boltAge - 0.24) * 3.6);
-    if (this.boltGroup) {
-      this.boltGroup.visible = this.lightningEnvelope > 0.025;
-      this.boltGroup.traverse((object) => {
-        if (object.isMesh && object.material) {
-          const base = object.material.userData.baseOpacity ?? 1;
-          object.material.opacity = base * Math.min(1, this.lightningEnvelope * 1.5);
-        }
-      });
-    }
+    this.boltGroup.visible = this.lightningEnvelope > 0.025;
+    const boltOpacity = Math.min(1, this.lightningEnvelope * 1.5);
+    this.boltCoreMaterial.opacity = boltOpacity;
+    this.boltGlowMaterial.opacity = 0.16 * boltOpacity;
     this.lightning.intensity = this.lightningEnvelope * 7.5;
     if (this.thunderTimer >= 0) {
       this.thunderTimer -= dt;

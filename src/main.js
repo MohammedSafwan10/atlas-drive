@@ -550,6 +550,7 @@ async function boot() {
   raceCourse.setVisible(true);
   effects.warmUp(renderer, scene, camera);
   traffic.warmUp(renderer, scene, camera);
+  weather.warmUp(renderer, scene, camera);
   traffic.resetRace(raceDifficulty);
   setTimeOfDay(timeOfDay.update(0), true);
   await loadingGate.reveal(renderer, scene, camera);
