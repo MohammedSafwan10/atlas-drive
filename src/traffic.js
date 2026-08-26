@@ -403,6 +403,7 @@ export class Traffic {
       car.z = slot.z;
       car.speed = slot.speed;
       car.finished = false;
+      car.hasCollided = false;
       car.laneTimer = 0.8 + i * 0.45;
       car.collisionCooldown = 0;
       car.nitroTimer = 0;
@@ -423,6 +424,10 @@ export class Traffic {
       const lift = Math.abs(car.x) < 3.4 ? rampSurfaceLift(car.z) : 0;
       roadPoint(car.z, car.x, lift, car.mesh.position);
       car.mesh.rotation.set(roadPitch(car.z), roadYaw(car.z), 0);
+      // reset() hides the shared traffic pool. Race setup must explicitly
+      // restore its three grid entries; otherwise updateRace skips them and
+      // the player starts alone.
+      car.mesh.visible = true;
     }
   }
 
