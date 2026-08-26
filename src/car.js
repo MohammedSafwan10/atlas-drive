@@ -83,7 +83,7 @@ export class Car {
     draco.setDecoderPath('/assets/draco/');
     const loader = new GLTFLoader();
     loader.setDRACOLoader(draco);
-    loader.load('/assets/ferrari.glb', (gltf) => {
+    this.ready = new Promise((resolve) => loader.load('/assets/ferrari.glb', (gltf) => {
       const carModel = gltf.scene.children[0];
       carModel.traverse((o) => {
         if (o.isMesh) {
@@ -137,10 +137,12 @@ export class Car {
       this.modelReady = true;
       fallback.visible = false;
       draco.dispose();
+      resolve();
     }, undefined, (err) => {
       console.warn('Ferrari GLB failed to load, using fallback car', err);
       draco.dispose();
-    });
+      resolve();
+    }));
 
     // Twin focused headlight beams. These match the physical lamp positions and
     // avoid the flat, oversized cone produced by the former central spotlight.

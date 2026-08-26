@@ -43,6 +43,13 @@ export class GameAudio {
     return this.loading;
   }
 
+  // Decode audio while the loading screen is still opaque. Browsers keep the
+  // context suspended until the player's first interaction, so this does not
+  // autoplay anything; it only removes fetch/decode work from race launch.
+  preload() {
+    return this.init();
+  }
+
   async start() {
     if (!this.loading) this.loading = this._init();
     if (this.context?.state === 'suspended') await this.context.resume();

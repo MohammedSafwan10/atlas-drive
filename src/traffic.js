@@ -181,7 +181,7 @@ export class Traffic {
     draco.setDecoderPath('/assets/draco/');
     const loader = new GLTFLoader();
     loader.setDRACOLoader(draco);
-    loader.load('/assets/ferrari.glb', (gltf) => {
+    this.ready = new Promise((resolve) => loader.load('/assets/ferrari.glb', (gltf) => {
       const template = gltf.scene.children[0];
       const details = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.5 });
       const glass = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.25, roughness: 0, transmission: 1.0 });
@@ -215,7 +215,11 @@ export class Traffic {
         attachNitroFX(car);
       }
       draco.dispose();
-    }, undefined, () => draco.dispose());
+      resolve();
+    }, undefined, () => {
+      draco.dispose();
+      resolve();
+    }));
   }
 
   warmUp(renderer, scene, camera) {

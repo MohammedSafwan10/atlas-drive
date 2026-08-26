@@ -123,11 +123,10 @@ export function createScene(canvas) {
 
   const sunDirection = new THREE.Vector3(48, 68, 28);
   let lastMaterialEnvironment = 1;
-  let lastMaterialRefresh = 0;
   let weatherIntensity = 0;
   let lightningIntensity = 0;
   let lastTimeProfile = null;
-  function setTimeOfDay(profile) {
+  function setTimeOfDay(profile, forceMaterialRefresh = false) {
     lastTimeProfile = profile;
     skyMaterial.uniforms.timeWeights.value.fromArray(profile.weights);
     renderer.toneMappingExposure = profile.exposure * THREE.MathUtils.lerp(1, 0.73, weatherIntensity) + lightningIntensity * 0.16;
@@ -140,10 +139,9 @@ export function createScene(canvas) {
     sun.intensity = profile.sunIntensity * THREE.MathUtils.lerp(1, 0.2, weatherIntensity) + lightningIntensity * 1.2;
     sunDirection.copy(profile.sunDirection);
     // Three r160 has no scene.environmentIntensity. Apply the time-of-day HDR
-    // strength to unique materials, throttled so transitions remain cheap and
-    // late-loaded GLBs still inherit the current lighting within one second.
-    const now = performance.now();
-    if (Math.abs(profile.environmentIntensity - lastMaterialEnvironment) > 0.025 || now - lastMaterialRefresh > 1000) {
+    // strength to unique materials. Late-loaded assets are explicitly refreshed
+    // once behind the loading gate, avoiding a scene-wide traversal every second.
+    if (forceMaterialRefresh || Math.abs(profile.environmentIntensity - lastMaterialEnvironment) > 0.025) {
       const materials = new Set();
       scene.traverse((object) => {
         if (!object.isMesh || !object.material) return;
@@ -158,7 +156,6 @@ export function createScene(canvas) {
         material.envMapIntensity = material.userData.timeBaseEnvIntensity * profile.environmentIntensity;
       }
       lastMaterialEnvironment = profile.environmentIntensity;
-      lastMaterialRefresh = now;
     }
   }
 
@@ -176,31 +173,9 @@ export function createScene(canvas) {
   }
   addEventListener('resize', resize);
 
-  // Adjust drawing-buffer resolution smoothly to lock 60 FPS across all GPUs and laptops.
-  let performanceTime = 0;
-  let performanceFrames = 0;
-  function updatePerformance(frameTime) {
-    if (document.hidden) return;
-    performanceTime += Math.min(frameTime, 0.1);
-    performanceFrames += 1;
-    if (performanceTime < 0.5) return;
-
-    const fps = performanceFrames / performanceTime;
-    let nextRatio = renderPixelRatio;
-    if (fps < 48) {
-      nextRatio = Math.max(GRAPHICS.minPixelRatio, renderPixelRatio - (fps < 30 ? 0.25 : 0.1));
-    } else if (fps > 58 && renderPixelRatio < GRAPHICS.maxPixelRatio) {
-      nextRatio = Math.min(GRAPHICS.maxPixelRatio, renderPixelRatio + 0.04);
-    }
-
-    if (Math.abs(nextRatio - renderPixelRatio) > 0.02) {
-      renderPixelRatio = nextRatio;
-      renderer.setPixelRatio(renderPixelRatio);
-      renderer.setSize(innerWidth, innerHeight, false);
-    }
-    performanceTime = 0;
-    performanceFrames = 0;
-  }
+  // Keep the renderer at the selected quality from boot. Reallocating the
+  // drawing buffer mid-race creates visible hitches and silently changes image quality.
+  function updatePerformance() {}
 
   // Keep the sun shadow box centered on the action
   function update(chaseTarget) {

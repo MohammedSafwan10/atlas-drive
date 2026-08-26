@@ -326,7 +326,7 @@ export class Environment {
     });
     this.trees = [];
 
-    Promise.all([
+    this.ready = Promise.all([
       loadModel(loader, MODEL_URLS.boulder),
       loadModel(loader, MODEL_URLS.rock),
       loadModel(loader, MODEL_URLS.fern),

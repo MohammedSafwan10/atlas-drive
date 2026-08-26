@@ -81,9 +81,11 @@ let camPos = new THREE.Vector3(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2
 let camLook = new THREE.Vector3(0, 1, -10);
 let suspended = document.hidden;
 let pendingRaceResult = null;
+let spawnWorldPrepared = false;
 
 function resetCommon() {
   void audio.start().catch((error) => console.warn('Game audio unavailable', error));
+  const needsWorldReset = !spawnWorldPrepared || Number.isFinite(previewZ);
   car.reset();
   if (Number.isFinite(previewZ)) {
     car.z = previewZ;
@@ -94,8 +96,14 @@ function resetCommon() {
     input.touch.gas = true;
     input.touch.nitro = true;
   }
-  road.reset(car.z);
-  environment.reset(car.z);
+  // The loading gate has already built the road/scenery at the starting grid.
+  // Reusing it for the first launch avoids recomputing every road ribbon and
+  // scenery instance in the same click that begins the countdown.
+  if (needsWorldReset) {
+    road.reset(car.z);
+    environment.reset(car.z);
+  }
+  spawnWorldPrepared = true;
   camPos.set(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
   camLook.set(0, 1, -10);
   score = 0;
@@ -207,6 +215,7 @@ function showMenu() {
   traffic.reset();
   road.reset(0);
   environment.reset(0);
+  spawnWorldPrepared = true;
   camPos.set(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
   camLook.set(0, 1, -10);
   raceCourse.setVisible(false);
@@ -388,6 +397,7 @@ function tick() {
   }
 
   if (state === 'playing') {
+    spawnWorldPrepared = false;
     if (invulnerable > 0) invulnerable -= dt;
     car.group.visible = true;
 
@@ -511,13 +521,27 @@ try {
 if (import.meta.env.DEV && previewParams.has('previewLightning')) weather.forceLightning();
 tick();
 
-loadingGate.reveal(renderer, scene, camera).then(() => {
-  audio.init();
-  traffic.warmUp(renderer, scene, camera);
+async function boot() {
+  // Finish decoding/building the real models, scenery and audio before the
+  // loader can disappear. Then compile the exact starting grid the player
+  // will see, so the first race click cannot trigger shader/texture uploads.
+  await Promise.all([car.ready, traffic.ready, environment.ready, audio.preload()]);
+  car.reset();
+  road.reset(0);
+  environment.reset(0);
+  spawnWorldPrepared = true;
+  traffic.resetRace(raceDifficulty);
+  raceCourse.setVisible(true);
+  setTimeOfDay(timeOfDay.update(0), true);
+  await loadingGate.reveal(renderer, scene, camera);
+  traffic.reset();
+  raceCourse.setVisible(false);
   state = 'start';
   clock.getDelta();
   hud.showStart();
-}).catch((error) => {
+}
+
+boot().catch((error) => {
   // Never strand the player behind a loader if GPU warm-up fails unexpectedly.
   console.error('Startup warm-up failed', error);
   document.getElementById('loading-screen')?.remove();
