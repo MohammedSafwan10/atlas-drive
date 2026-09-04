@@ -1,3 +1,5 @@
+import { FixedStepper, damp } from './physics.js';
+import { QUALITY } from './platform.js';
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { Road } from './road.js';
@@ -20,28 +22,6 @@ import { PerformanceDiagnostics } from './diagnostics.js';
 
 const canvas = document.getElementById('game');
 
-if (IS_MOBILE) {
-  document.getElementById('loading-screen')?.remove();
-  const blocker = document.getElementById('mobile-block-screen');
-  if (blocker) {
-    blocker.style.display = 'flex';
-    const copyBtn = document.getElementById('mobile-copy-btn');
-    const urlBox = blocker.querySelector('.mobile-url-box');
-    if (urlBox && window.location.host) urlBox.textContent = window.location.host;
-    copyBtn?.addEventListener('click', () => {
-      const url = window.location.href;
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(url).then(() => {
-          copyBtn.textContent = 'LINK COPIED! ✓';
-          setTimeout(() => { copyBtn.textContent = '📋 COPY LINK FOR PC'; }, 2500);
-        }).catch(() => {
-          copyBtn.textContent = 'LINK COPIED! ✓';
-        });
-      }
-    });
-  }
-}
-
 const loadingGate = new LoadingGate();
 const { renderer, scene, camera, update: updateScene, updatePerformance, setTimeOfDay, setWeatherIntensity } = createScene(canvas);
 
@@ -59,7 +39,7 @@ const timeOfDay = new TimeOfDay(setTimeOfDay);
 const finishPresentation = new FinishPresentation(scene);
 const weather = new WeatherSystem(scene, camera, road, audio, setWeatherIntensity);
 const previewParams = new URLSearchParams(location.search);
-const previewZ = import.meta.env.DEV
+const previewZ = import.meta.env.DEV && previewParams.has('previewZ')
   ? Number(previewParams.get('previewZ'))
   : Number.NaN;
 const previewBoost = import.meta.env.DEV && previewParams.has('previewBoost');
@@ -85,10 +65,18 @@ let camLook = new THREE.Vector3(0, 1, -10);
 let suspended = document.hidden;
 let pendingRaceResult = null;
 let spawnWorldPrepared = false;
+const stepper = new FixedStepper();
+let cameraMode = 0;
+const cameraLabels = ['CHASE', 'WIDE', 'BONNET'];
+let gameOverTimer;
+
 
 function resetCommon() {
   void audio.start().catch((error) => console.warn('Game audio unavailable', error));
   const needsWorldReset = !spawnWorldPrepared || Number.isFinite(previewZ);
+  clearTimeout(gameOverTimer);
+  stepper.reset();
+  input.clearAll();
   car.reset();
   if (Number.isFinite(previewZ)) {
     car.z = previewZ;
@@ -235,6 +223,7 @@ function pauseGame() {
   if (state !== 'playing' && state !== 'countdown') return;
   stateBeforePause = state;
   state = 'paused';
+  stepper.reset();
   input.clearAll();
   audio.setPaused(true);
   audio.ui(420);
@@ -266,7 +255,7 @@ function hit() {
     state = 'crashed';
     car.crashed = true;
     hud.showPauseButton(false);
-    setTimeout(() => hud.showGameOver(score), 600);
+    gameOverTimer = setTimeout(() => { if (state === 'crashed') hud.showGameOver(score); }, 600);
   } else {
     invulnerable = 1.8;
   }
@@ -288,13 +277,13 @@ function raceCollision(rival) {
 
 function finishRace() {
   if (state === 'finished' || state === 'finishCinematic') return;
-  const standings = traffic.getRaceStandings(car.z);
+  const standings = traffic.getRaceStandings(car.z, raceTime);
   const position = standings.findIndex((entry) => entry.player) + 1;
   state = 'finishCinematic';
   car.nitroActive = false;
   input.clearAll();
   hud.showCountdown('');
-  const recordKey = `atlas-drive-best-${raceDifficulty}`;
+  const recordKey = `atlas-drive-v2-best-${raceDifficulty}`;
   let previousBest = Number.POSITIVE_INFINITY;
   try { previousBest = Number(localStorage.getItem(recordKey)) || Number.POSITIVE_INFINITY; } catch { /* storage may be disabled */ }
   const isRecord = raceTime < previousBest;
@@ -336,6 +325,11 @@ hud.bind({
   skipFinish,
 });
 addEventListener('keydown', (e) => {
+  if (e.repeat || ['SELECT', 'INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
+  if (e.code === 'KeyV') {
+    cameraMode = (cameraMode + 1) % 3;
+    hud.showNearMiss(`${cameraLabels[cameraMode]} CAMERA`);
+  }
   if (e.code === 'F8') {
     e.preventDefault();
     diagnostics.toggle();
@@ -362,29 +356,8 @@ document.addEventListener('visibilitychange', () => {
   if (!suspended) clock.getDelta();
 });
 
-function tick() {
-  requestAnimationFrame(tick);
-  const frameTime = clock.getDelta();
-  diagnostics.recordFrame(frameTime);
-  const dt = Math.min(frameTime, 0.05);
+function simulate(dt) {
   raceImpactCooldown = Math.max(0, raceImpactCooldown - dt);
-
-  if (suspended) return;
-  updatePerformance(frameTime);
-  const timeProfile = timeOfDay.update(state === 'paused' ? 0 : dt);
-  hud.updateTime(timeProfile, timeOfDay.mode);
-  const currentRoadMode = modeForSegment(Math.round(car.z / SEG_LEN));
-  const weatherIntensity = weather.update(
-    state === 'paused' ? 0 : dt,
-    car,
-    state === 'playing' || state === 'finishCinematic',
-    currentRoadMode === 'tunnel',
-  );
-  const darkness = Math.max(timeProfile.night, weatherIntensity * 0.82);
-  road.setNightFactor(darkness);
-  car.setNightFactor(darkness);
-  traffic.setNightFactor(darkness, car.z);
-
   if (state === 'countdown') {
     raceCountdown -= dt;
     const stage = Math.max(0, Math.ceil(raceCountdown));
@@ -408,6 +381,7 @@ function tick() {
       }
     }
     traffic.updateRace(dt, car, false, raceCollision);
+    return;
   }
 
   if (state === 'playing') {
@@ -415,6 +389,8 @@ function tick() {
     if (invulnerable > 0) invulnerable -= dt;
     car.group.visible = true;
 
+    car.wetness = weather.intensity;
+    const previousZ = car.z;
     car.update(dt, input);
     car.z -= car.speed * dt;
     car.syncToRoad();
@@ -435,8 +411,8 @@ function tick() {
         hud.showNearMiss();
         audio.nearMiss();
       }, () => {
-        if (!car.airborne) hit(); // flying over traffic is safe
-      });
+        hit();
+      }, car.group.position.y);
     } else {
       raceTime += dt;
       raceTopSpeed = Math.max(raceTopSpeed, car.kmh);
@@ -448,9 +424,40 @@ function tick() {
         hud.showNearMiss(`CHECKPOINT ${playerCheckpoint} / ${RACE_CHECKPOINTS.length - 1}`);
         audio.ui(700 + playerCheckpoint * 70);
       }
-      if (progress >= RACE_DISTANCE) finishRace();
+      if (progress >= RACE_DISTANCE) {
+        const fraction = THREE.MathUtils.clamp((previousZ + RACE_DISTANCE) / Math.max(0.001, previousZ - car.z), 0, 1);
+        raceTime -= dt * (1 - fraction);
+        finishRace();
+      }
     }
   }
+
+}
+
+function tick() {
+  requestAnimationFrame(tick);
+  const frameTime = clock.getDelta();
+  diagnostics.recordFrame(frameTime);
+  const dt = Math.min(frameTime, 0.05);
+
+  if (suspended) return;
+  updatePerformance(frameTime);
+  const timeProfile = timeOfDay.update(state === 'paused' ? 0 : dt);
+  hud.updateTime(timeProfile, timeOfDay.mode);
+  const currentRoadMode = modeForSegment(Math.round(car.z / SEG_LEN));
+  const weatherIntensity = weather.update(
+    state === 'paused' ? 0 : dt,
+    car,
+    state === 'playing' || state === 'finishCinematic',
+    currentRoadMode === 'tunnel',
+  );
+  const darkness = Math.max(timeProfile.night, weatherIntensity * 0.82);
+  road.setNightFactor(darkness);
+  car.setNightFactor(darkness);
+  traffic.setNightFactor(darkness, car.z);
+
+  if (state === 'playing' || state === 'countdown') stepper.advance(frameTime, simulate);
+  else stepper.reset();
 
   if (state === 'finishCinematic' || state === 'finished') {
     car.speed *= Math.exp(-dt * 1.6);
@@ -460,7 +467,7 @@ function tick() {
   if (state !== 'paused') {
     road.update(car.z);
     environment.update(car.z);
-    updateScene(car.group.position);
+    updateScene(car.group.position, dt);
     effects.update(dt, car, car.nitroActive && state === 'playing', state === 'crashed');
   }
 
@@ -470,16 +477,19 @@ function tick() {
   } else {
     // Chase camera: smooth follow with speed pullback
     const speedPull = Math.min(car.speed / 88, 1);
-    const chaseDistance = IS_MOBILE ? 5.2 : 7.2;
-    const chaseHeight = IS_MOBILE ? 2.85 : 3.65;
+    const chaseDistance = cameraMode === 2 ? -1.6 : cameraMode === 1 ? 10.8 : 7.2;
+    const chaseHeight = cameraMode === 2 ? 1.1 : cameraMode === 1 ? 4.7 : 3.1;
     const targetPos = roadPoint(
-      car.z + chaseDistance + speedPull * (IS_MOBILE ? 0.25 : 1.5),
-      car.x * 0.62,
-      chaseHeight + speedPull * (IS_MOBILE ? 0.16 : 0.42),
+      car.z + chaseDistance + (cameraMode === 2 ? 0 : speedPull * 1.5),
+      car.x * (cameraMode === 2 ? 1 : 0.85),
+      chaseHeight + (cameraMode === 2 ? car.airY : speedPull * 0.42 + car.airY * 0.35),
     );
-    const targetLook = roadPoint(car.z - (IS_MOBILE ? 15 : 14), car.x * 0.82, 0.95);
-    camPos.copy(targetPos);
-    camLook.copy(targetLook);
+    const targetLook = roadPoint(car.z - 18, car.x * (cameraMode === 2 ? 1 : 0.82), 0.95 + (cameraMode === 2 ? car.airY : 0));
+    // Smooth lateral suspension without adding longitudinal lag at race speed.
+    camPos.x = damp(camPos.x, targetPos.x, 12, dt);
+    camPos.y = damp(camPos.y, targetPos.y, 9, dt);
+    camPos.z = targetPos.z;
+    camLook.lerp(targetLook, 1 - Math.exp(-14 * dt));
 
     // Apply impact impulse smoothly to camera position before projection
     if (impactShake > 0) {
@@ -495,7 +505,7 @@ function tick() {
 
   hud.update(car, score);
   if (gameMode === 'race') {
-    const standings = traffic.getRaceStandings(car.z);
+    const standings = traffic.getRaceStandings(car.z, raceTime);
     const position = standings.findIndex((entry) => entry.player) + 1;
     hud.updateRace({
       position,
@@ -568,4 +578,19 @@ boot().catch((error) => {
   document.getElementById('loading-screen')?.remove();
   state = 'start';
   hud.showStart();
+});
+
+for (const select of document.querySelectorAll('[data-quality]')) {
+  select.value = QUALITY;
+  select.addEventListener('change', () => {
+    try { localStorage.setItem('atlas-drive-quality', select.value); location.reload(); }
+    catch { hud.showNearMiss('Browser storage is disabled'); }
+  });
+}
+document.getElementById('pause-menu-btn').addEventListener('click', showMenu);
+document.getElementById('fullscreen-btn').addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  } catch { hud.showNearMiss('Fullscreen unavailable'); }
 });

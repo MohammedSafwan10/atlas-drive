@@ -121,6 +121,7 @@ function updateTerrainGeometry(geometry, centerZ) {
   }
   positions.needsUpdate = true;
   geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
 }
 
 function loadTerrainSet(loader, name, repeat, anisotropy) {

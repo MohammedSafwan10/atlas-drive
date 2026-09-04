@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { Landscape } from './landscape.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
-import { GRAPHICS, IS_MOBILE } from './platform.js';
+import { GRAPHICS, IS_MOBILE, QUALITY } from './platform.js';
 
 // Renderer, scene, camera, HDRI lighting, fog
 export function createScene(canvas) {
@@ -9,7 +10,7 @@ export function createScene(canvas) {
     // Native 4x MSAA pushed the test phone into its 30 FPS compositor tier.
     // Mobile instead uses a denser drawing buffer, which preserves fine texture
     // detail with substantially lower bandwidth cost on tile-based GPUs.
-    antialias: !IS_MOBILE,
+    antialias: GRAPHICS.shadowMapSize > 0,
     powerPreference: 'high-performance',
     alpha: false,
     stencil: false,
@@ -17,7 +18,7 @@ export function createScene(canvas) {
   let renderPixelRatio = Math.min(devicePixelRatio, GRAPHICS.maxPixelRatio);
   renderer.setPixelRatio(renderPixelRatio);
   renderer.setSize(innerWidth, innerHeight);
-  renderer.shadowMap.enabled = !IS_MOBILE;
+  renderer.shadowMap.enabled = GRAPHICS.shadowMapSize > 0;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.9;
@@ -26,72 +27,53 @@ export function createScene(canvas) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0xb9cad6, 0.00235);
 
-  const camera = new THREE.PerspectiveCamera(IS_MOBILE ? 58 : 64, innerWidth / innerHeight, 0.1, 1200);
+  const camera = new THREE.PerspectiveCamera(IS_MOBILE ? 58 : 64, innerWidth / innerHeight, 0.1, 4200);
   camera.position.set(0, IS_MOBILE ? 2.85 : 3.65, IS_MOBILE ? 5.2 : 7.2);
 
-  // Use a sharp 6K photographic panorama for the visible sky/mountains, while
-  // retaining the compact HDR file solely for image-based PBR lighting.
-  const textureLoader = new THREE.TextureLoader();
-  const backdrops = [
-    textureLoader.load('/assets/alps_field_4k.webp'),
-    textureLoader.load('/assets/alps_field_sunset.webp'),
-    textureLoader.load('/assets/alps_field_night.webp'),
-    textureLoader.load('/assets/alps_field_storm.webp'),
-  ];
-  for (const backdrop of backdrops) {
-    backdrop.mapping = THREE.EquirectangularReflectionMapping;
-    backdrop.colorSpace = THREE.SRGBColorSpace;
-    backdrop.minFilter = THREE.LinearMipmapLinearFilter;
-    backdrop.magFilter = THREE.LinearFilter;
-  }
   const skyMaterial = new THREE.ShaderMaterial({
     uniforms: {
-      dayMap: { value: backdrops[0] },
-      sunsetMap: { value: backdrops[1] },
-      nightMap: { value: backdrops[2] },
-      stormMap: { value: backdrops[3] },
-      timeWeights: { value: new THREE.Vector3(1, 0, 0) },
-      weatherIntensity: { value: 0 },
+      horizon: { value: new THREE.Color(0xb9cad6) },
+      zenith: { value: new THREE.Color(0x2765a0) },
+      sunColor: { value: new THREE.Color(0xffefcf) },
+      sunDirection: { value: new THREE.Vector3(0.4, 0.8, -0.3).normalize() },
+      night: { value: 0 }, weatherIntensity: { value: 0 }, time: { value: 0 },
     },
-    vertexShader: `
-      varying vec2 vSkyUv;
-      void main() {
-        vSkyUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
+    vertexShader: `varying vec3 vDirection;
+      void main() { vDirection = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
-      uniform sampler2D dayMap;
-      uniform sampler2D sunsetMap;
-      uniform sampler2D nightMap;
-      uniform sampler2D stormMap;
-      uniform vec3 timeWeights;
-      uniform float weatherIntensity;
-      varying vec2 vSkyUv;
-      void main() {
-        vec3 dayColor = timeWeights.x > 0.001 ? texture2D(dayMap, vSkyUv).rgb : vec3(0.0);
-        vec3 sunsetColor = timeWeights.y > 0.001 ? texture2D(sunsetMap, vSkyUv).rgb : vec3(0.0);
-        vec3 nightColor = timeWeights.z > 0.001 ? texture2D(nightMap, vSkyUv).rgb : vec3(0.0);
-        float total = max(0.001, timeWeights.x + timeWeights.y + timeWeights.z);
-        vec3 clearColor = (dayColor * timeWeights.x + sunsetColor * timeWeights.y + nightColor * timeWeights.z) / total;
-        vec3 stormColor = weatherIntensity > 0.005 ? texture2D(stormMap, vSkyUv).rgb : vec3(0.0);
-        gl_FragColor = vec4(mix(clearColor, stormColor, smoothstep(0.08, 0.9, weatherIntensity)), 1.0);
+      varying vec3 vDirection;
+      uniform vec3 horizon, zenith, sunColor, sunDirection;
+      uniform float night, weatherIntensity, time;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+      float noise(vec2 p) {
+        vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+        return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
       }
-    `,
-    side: THREE.BackSide,
-    depthTest: true,
-    depthWrite: false,
-    fog: false,
-    toneMapped: false,
+      void main() {
+        vec3 d = normalize(vDirection);
+        float h = max(d.y,0.0);
+        vec3 color = mix(horizon,zenith,pow(h,0.48));
+        float sun = max(dot(d,normalize(sunDirection)),0.0);
+        color += sunColor * (pow(sun,1000.0)*2.0 + pow(sun,18.0)*0.18) * (1.0-weatherIntensity) * (1.0-night);
+        vec2 uv = d.xz / max(0.12,d.y + 0.22) * 2.0 + vec2(time*0.006,0);
+        float n = noise(uv)*0.58 + noise(uv*2.1)*0.28 + noise(uv*4.3)*0.14;
+        float cloud = smoothstep(mix(0.57,0.31,weatherIntensity),0.79,n) * smoothstep(0.0,0.12,d.y);
+        vec3 cloudColor = mix(mix(vec3(0.91,0.94,0.97),horizon,0.28),vec3(0.16,0.20,0.25),weatherIntensity);
+        cloudColor *= 1.0-night*0.72;
+        color = mix(color,cloudColor,cloud*0.92);
+        vec2 stars = vec2(atan(d.z,d.x),asin(d.y))*500.0;
+        float star = step(0.997,hash(floor(stars))) * pow(1.0-length(fract(stars)-0.5),8.0);
+        color += star * night * (1.0-weatherIntensity) * (1.0-cloud) * smoothstep(0.02,0.3,d.y);
+        gl_FragColor = vec4(color,1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    side: THREE.BackSide, depthWrite: false, fog: false,
   });
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(900, GRAPHICS.skyWidthSegments, GRAPHICS.skyHeightSegments),
-    skyMaterial,
-  );
-  sky.rotation.y = Math.PI * 1.02;
-  sky.renderOrder = 0;
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(3900, 32, 16), skyMaterial);
   sky.frustumCulled = false;
   scene.add(sky);
+  const landscape = new Landscape(scene);
 
   // The HDRI drives reflections and ambient illumination but is not displayed.
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -108,8 +90,8 @@ export function createScene(canvas) {
 
   const sun = new THREE.DirectionalLight(0xfff0d5, 2.2);
   sun.position.set(48, 68, 28);
-  sun.castShadow = !IS_MOBILE;
-  if (!IS_MOBILE) sun.shadow.mapSize.set(GRAPHICS.shadowMapSize, GRAPHICS.shadowMapSize);
+  sun.castShadow = GRAPHICS.shadowMapSize > 0;
+  if (GRAPHICS.shadowMapSize) sun.shadow.mapSize.set(GRAPHICS.shadowMapSize, GRAPHICS.shadowMapSize);
   sun.shadow.camera.near = 10;
   sun.shadow.camera.far = 220;
   sun.shadow.camera.left = -48;
@@ -128,7 +110,11 @@ export function createScene(canvas) {
   let lastTimeProfile = null;
   function setTimeOfDay(profile, forceMaterialRefresh = false) {
     lastTimeProfile = profile;
-    skyMaterial.uniforms.timeWeights.value.fromArray(profile.weights);
+    skyMaterial.uniforms.horizon.value.copy(profile.fogColor).lerp(new THREE.Color(0x4d6071), weatherIntensity * 0.7);
+    skyMaterial.uniforms.zenith.value.copy(profile.skyColor).multiplyScalar(0.48).lerp(new THREE.Color(0x192733), weatherIntensity * 0.7);
+    skyMaterial.uniforms.sunColor.value.copy(profile.sunColor);
+    skyMaterial.uniforms.sunDirection.value.copy(profile.sunDirection).normalize();
+    skyMaterial.uniforms.night.value = profile.night;
     renderer.toneMappingExposure = profile.exposure * THREE.MathUtils.lerp(1, 0.73, weatherIntensity) + lightningIntensity * 0.16;
     scene.fog.color.copy(profile.fogColor).lerp(new THREE.Color(0x74828e), weatherIntensity * 0.72);
     scene.fog.density = profile.fogDensity + weatherIntensity * 0.00155;
@@ -175,11 +161,30 @@ export function createScene(canvas) {
 
   // Keep the renderer at the selected quality from boot. Reallocating the
   // drawing buffer mid-race creates visible hitches and silently changes image quality.
-  function updatePerformance() {}
+  let sampleTime = 0, sampleFrames = 0, cooldown = 6;
+  function updatePerformance(frameTime) {
+    if (QUALITY !== 'auto' || frameTime > 0.15 || frameTime <= 0) return;
+    cooldown -= frameTime;
+    sampleTime += frameTime; sampleFrames++;
+    if (sampleTime < 3) return;
+    const fps = sampleFrames / sampleTime;
+    if (cooldown <= 0) {
+      const target = fps < 45 ? Math.max(GRAPHICS.minPixelRatio, renderPixelRatio - 0.1)
+        : fps > 58 ? Math.min(Math.min(devicePixelRatio, GRAPHICS.maxPixelRatio), renderPixelRatio + 0.05) : renderPixelRatio;
+      if (Math.abs(target - renderPixelRatio) > 0.01) {
+        renderPixelRatio = target;
+        renderer.setPixelRatio(target);
+        cooldown = 8;
+      }
+    }
+    sampleTime = sampleFrames = 0;
+  }
 
   // Keep the sun shadow box centered on the action
-  function update(chaseTarget) {
-    sky.position.set(chaseTarget.x, 0, chaseTarget.z);
+  function update(chaseTarget, dt = 0) {
+    landscape.update(chaseTarget.z);
+    skyMaterial.uniforms.time.value += dt;
+    sky.position.copy(chaseTarget);
     sun.position.set(chaseTarget.x + sunDirection.x, sunDirection.y, chaseTarget.z + sunDirection.z);
     sun.target.position.set(chaseTarget.x, 0, chaseTarget.z);
   }

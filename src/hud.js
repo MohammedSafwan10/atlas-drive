@@ -62,7 +62,7 @@ export class HUD {
     document.getElementById('setup-back-btn').addEventListener('click', closeRaceSetup);
     document.getElementById('restart-btn').addEventListener('click', restart);
     document.getElementById('pause-restart-btn').addEventListener('click', restart);
-    document.getElementById('race-again-btn').addEventListener('click', () => openSetup('race'));
+    document.getElementById('race-again-btn').addEventListener('click', restart);
     document.getElementById('results-menu-btn').addEventListener('click', menu);
     this.pauseButton.addEventListener('click', pause);
     document.getElementById('resume-btn').addEventListener('click', resume);

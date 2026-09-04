@@ -8,7 +8,7 @@ A cinematic browser racing game built with Three.js. Race tactical rivals across
 
 ## Gameplay
 
-The demo captures a complete 1080p race sequence across changing daylight and weather, including tactical rival AI, nitro, the HUD and nighttime headlights.
+The demo records the earlier panorama-based version, before the current driving/landscape update. It captures a 1080p race sequence across changing daylight and weather, including tactical rival AI, nitro, the HUD and nighttime headlights.
 
 ## Highlights
 
@@ -17,11 +17,11 @@ The demo captures a complete 1080p race sequence across changing daylight and we
 - Rookie, Sport, and Pro rival AI with tactical overtakes, defending, nitro bursts, and believable mistakes
 - Uneven 3D terrain with gravel shoulders, drainage ditches, guardrails, fences, reflectors, signs, and utility poles
 - Three distinct tree species plus rocks, ferns, bushes, grass, and wildflowers
-- PBR asphalt and terrain materials, HDR environment lighting, alpine panorama, shadows, fog, bloom, and cinematic color grading
+- PBR asphalt and terrain materials, HDR environment lighting, world-anchored 3D mountains, atmospheric sky, shadows and fog
 - Dynamic eight-minute day cycle with matched morning, daytime, sunset, twilight, and starry-night lighting plus manual overrides
-- Dynamic clear-to-storm weather arc with a matched Alpine storm panorama, scalable rain, wet asphalt, wheel spray, tunnel sheltering, lightning, delayed thunder, and manual weather controls
+- Dynamic clear-to-storm weather arc with procedural cloud cover, scalable rain, wet asphalt, wheel spray, tunnel sheltering, lightning, delayed thunder, and manual weather controls
 - Detailed player car with working brake lights, rotating tires, nitro effects, and contact shadow
-- Road-casting headlights on the player and all three race rivals, with mobile distance culling
+- Road-casting headlights on the player and all three race rivals, with distance culling
 - Skippable multi-angle finish replay followed by a ranked three-car podium, confetti, result statistics, and finish audio stinger
 - Traffic, near-miss scoring, three-life collision system, speedometer, nitro bar, and FPS counter
 - Reactive three-band engine audio, recorded CC0 rain and thunder variations, road/wind noise, nitro, impacts, and UI sounds
@@ -55,13 +55,13 @@ npm run preview
 | Brake | `S` or `Down Arrow` |
 | Steer | `A` / `D` or `Left` / `Right Arrow` |
 | Nitro | `Shift` |
+| Handbrake | `Space` |
+| Cycle chase / wide / bonnet camera | `V` |
 | Pause / resume | `P` or `Escape` |
 | Mute / unmute | `M` |
 | Restart after game over | `R` |
 
-When the website is opened on a touch device, use the responsive on-screen
-steering, brake, gas, nitro and pause controls. Tilt steering can be enabled
-from the top control.
+Desktop browsers with keyboard controls are supported. Phones and tablets show a desktop-only message without loading the 3D engine. Touchscreen laptops use the regular desktop layout.
 
 ## Project structure
 
@@ -81,9 +81,37 @@ src/
 public/assets/     Runtime models, textures, panorama, and Draco decoder
 ```
 
+## Driving and graphics update
+
+- Fixed 120 Hz simulation decouples handling, race timers and collisions from display refresh rate.
+- Engine force tapers smoothly; ending nitro preserves momentum. Braking overrides throttle.
+- Speed-sensitive steering, lateral momentum, shoulder drag, barrier response, handbrake and wet-road braking/grip.
+- Airborne collisions use vehicle height; rivals and player share gravity. Finish order records line-crossing times.
+- Mountain geometry stays anchored to the world and recycles in 400 m strips, with shared seams and atmospheric haze. The sky uses procedural clouds, sun and stars; the old photographic panoramas are no longer loaded.
+- Three cameras (`V`), fullscreen button, pause-to-menu, working Race Again action and repeat-safe pause keys.
+- Best times use a new storage key because the handling and timing changed.
+
 ## Performance notes
 
+Choose **Auto**, **Low**, **Medium** or **High** from the start/pause menu. Changing the preset reloads the game. Low removes sun shadows and reduces vegetation, rain, particles and terrain detail. Medium targets ordinary laptops; High increases resolution, scenery and shadows. Auto starts conservatively and adjusts drawing-buffer resolution after sustained slow/fast samples, with cooldowns to avoid constant resizing. Quality settings do not alter traffic counts or physics.
+
+The player glass no longer requires a transmission render pass. Existing models/textures are reused; the new landscape requires no additional downloads. No universal FPS guarantee is made: validate on integrated and dedicated GPUs, particularly in storms/night scenes.
+
+
+
 The world recycles deterministic 120-metre terrain slices on exact grid boundaries to prevent roadside texture swimming or geometry pops. Small vegetation is rendered with GPU instancing, while distant scenery uses cheaper representations to keep draw calls under control.
+
+## Validation and Cloudflare
+
+```bash
+npm test
+npm run build
+npm run deploy
+```
+
+The test suite covers refresh-rate consistency, boost release, braking, wet grip, air control, barriers, bounded catch-up, mountain normals/seams/recycling, finish order and height-aware collisions. Tests run without a browser; they do not certify rendered appearance or real GPU performance.
+
+`npm run deploy` builds the static output and publishes to the existing Cloudflare Pages project `atlas-drive`. Wrangler needs an authenticated Cloudflare account with access to that project. Use `npx wrangler login` on your own machine, or provide `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` through a secure environment. Never commit credentials.
 
 ## Assets and credits
 

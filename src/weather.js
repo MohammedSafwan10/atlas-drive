@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { IS_MOBILE } from './platform.js';
+import { IS_MOBILE, GRAPHICS } from './platform.js';
 import { roadPoint } from './path.js';
 
 export const WEATHER_MODES = ['auto', 'clear', 'storm'];
@@ -97,7 +97,7 @@ export class WeatherSystem {
     this.boltMatrix = new THREE.Matrix4();
     this.boltUp = new THREE.Vector3(0, 1, 0);
 
-    this.rainCount = IS_MOBILE ? 280 : 1040;
+    this.rainCount = GRAPHICS.rainCount;
     const geometry = new THREE.PlaneGeometry(IS_MOBILE ? 0.036 : 0.045, IS_MOBILE ? 0.92 : 1.28);
     const seeds = new Float32Array(this.rainCount);
     for (let i = 0; i < this.rainCount; i++) seeds[i] = Math.random();

@@ -1,7 +1,8 @@
+import { integrateHandling } from './physics.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { SEG_LEN, roadPitch, roadPoint, roadYaw } from './path.js';
+import { SEG_LEN, roadPitch, roadPoint, roadYaw, roadCurvature } from './path.js';
 import { modeForSegment, rampLips, rampSurfaceLift } from './features.js';
 
 const GRAVITY = 16;
@@ -100,7 +101,7 @@ export class Car {
         color: 0xffffff, metalness: 1.0, roughness: 0.5,
       });
       const glassMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0xffffff, metalness: 0.25, roughness: 0, transmission: 1.0,
+        color: 0xffffff, metalness: 0.25, roughness: 0.12, transmission: 0,
       });
       const bodyPart = carModel.getObjectByName('body');
       if (bodyPart) bodyPart.material = bodyMaterial;
@@ -165,6 +166,9 @@ export class Car {
     this.x = 0;              // lateral position
     this.z = 0;
     this.steerAngle = 0;
+    this.lateralVelocity = 0;
+    this.bodyRoll = 0;
+    this.bodyPitch = 0;
     this.nitroAmount = 1.0;
     this.nitroActive = false;
     this.crashed = false;
@@ -184,51 +188,16 @@ export class Car {
     roadPoint(this.z, this.x, (this.airY || 0) + surfaceLift, this.group.position);
     const airPitch = this.airborne ? -Math.atan2(this.airVy, Math.max(20, this.speed)) * 0.55 : 0;
     this.group.rotation.set(
-      roadPitch(this.z) + airPitch,
+      roadPitch(this.z) + airPitch + this.bodyPitch,
       roadYaw(this.z) - this.steerAngle * 0.055,
-      this.steerAngle * 0.016,
+      this.bodyRoll,
     );
   }
 
   update(dt, input) {
     if (this.crashed) return;
 
-    const MAX_SPEED = 72;         // ~260 km/h
-    const NITRO_MAX = 88;         // ~317 km/h
-    const ACCEL = 14;
-    const BRAKE_DECEL = 26;
-    const DRAG = 0.35;
-    const ROLL = 1.2;
-
-    // Nitro
-    this.nitroActive = input.nitro && this.nitroAmount > 0.02 && input.throttle;
-    if (this.nitroActive) {
-      this.nitroAmount = Math.max(0, this.nitroAmount - dt * 0.28);
-    } else if (!input.nitro) {
-      this.nitroAmount = Math.min(1, this.nitroAmount + dt * 0.06);
-    }
-
-    // Longitudinal
-    const maxSpeed = this.nitroActive ? NITRO_MAX : MAX_SPEED;
-    if (input.throttle) {
-      const boost = this.nitroActive ? 1.9 : 1.0;
-      this.speed += ACCEL * boost * dt;
-    } else {
-      this.speed -= ROLL * dt;
-    }
-    if (input.brake) this.speed -= BRAKE_DECEL * dt;
-    this.speed -= DRAG * this.speed * dt * (this.speed / MAX_SPEED);
-    this.speed = Math.max(0, Math.min(this.speed, maxSpeed));
-
-    // Steering: speed-sensitive lateral movement with grip falloff
-    const control = this.airborne ? 0.35 : 1; // limited air control
-    const speedFactor = Math.min(1, this.speed / 30);
-    const steerRate = 9 * speedFactor * control;
-    this.steerAngle += (input.steer * steerRate - this.steerAngle) * Math.min(1, dt * 8);
-    // Lateral grip grows with speed so steering stays effective at nitro velocities
-    const lateralGain = (1 + (this.speed / MAX_SPEED) * 1.1) * control;
-    this.x += this.steerAngle * dt * lateralGain;
-    this.x = Math.max(-5.2, Math.min(5.2, this.x));
+    integrateHandling(this, input, dt, roadCurvature(this.z), this.wetness || 0);
 
     // Tactical ramp launch: crossing ramp lip within lateral span (-3.4 to +3.4)
     if (!this.airborne && this.speed > RAMP_MIN_LAUNCH_SPEED && Math.abs(this.x) < 3.4) {
@@ -252,7 +221,7 @@ export class Car {
     // Airborne integration
     if (this.airborne) {
       this.airTime += dt;
-      this.airY += this.airVy * dt;
+      this.airY += this.airVy * dt - 0.5 * GRAVITY * dt * dt;
       this.airVy -= GRAVITY * dt;
       if (this.airY <= 0 && this.airVy < 0) {
         this.airY = 0;
@@ -268,8 +237,8 @@ export class Car {
     this.syncToRoad();
 
     for (const light of this.taillights) {
-      light.material.emissiveIntensity = input.brake ? 4.2 : 1.2;
-      light.scale.set(input.brake ? 1.16 : 1, input.brake ? 1.16 : 1, 1);
+      light.material.emissiveIntensity = (input.brake || input.handbrake) ? 4.2 : 1.2;
+      light.scale.set((input.brake || input.handbrake) ? 1.16 : 1, (input.brake || input.handbrake) ? 1.16 : 1, 1);
     }
 
     // Wheels spin + front steer

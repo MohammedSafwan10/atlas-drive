@@ -543,6 +543,14 @@
       width: 100%; padding: 14px; font-size: 15px; font-weight: 700;
       border-radius: 10px; cursor: pointer; letter-spacing: 0.5px;
     }
+
+    .graphics-setting { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: #c0d4e5; font-size: 14px; flex-wrap: wrap; justify-content: center; }
+    .graphics-setting select { color: #e5f3ff; background: #142433; border: 1px solid #456079; padding: 10px; border-radius: 6px; font: inherit; }
+    .graphics-setting span { color: #96aabe; font-size: 12px; }
+    #fullscreen-btn { position: absolute; right: 20px; bottom: 24px; z-index: 15; color: #d3e9fa; background: #142433; border: 1px solid #456079; border-radius: 6px; font-size: 24px; cursor: pointer; padding: 6px 12px; pointer-events: auto; }
+    .controls-hint { max-width: 900px; line-height: 2.3; text-align: center; padding: 0 20px; }
+    .overlay { overflow-y: auto; }
+    #pause-screen .btn { margin: 5px; }
   </style>
 </head>
 <body>
@@ -633,6 +641,7 @@
     </div>
 
     <button id="pause-btn" aria-label="Pause game">Ⅱ</button>
+    <button id="fullscreen-btn" aria-label="Toggle fullscreen">⛶</button>
     <button id="sound-btn" aria-label="Mute game audio">🔊</button>
     <button id="time-indicator" aria-label="Change time of day">☀ DAY · AUTO</button>
 
@@ -649,11 +658,14 @@
           <span>Traffic dodging · 3 lives · score attack</span>
         </button>
       </div>
+<label class="graphics-setting">Graphics <select data-quality aria-label="Graphics quality (reloads game)">
+<option value="auto">Auto · adapts resolution</option><option value="low">Low · integrated graphics</option><option value="medium">Medium · balanced</option><option value="high">High · dedicated graphics</option>
+</select><span>Changing quality restarts the game</span></label>
       <div class="controls-hint">
         <span class="key">W</span> <span class="key">A</span> <span class="key">S</span> <span class="key">D</span> DRIVE &nbsp;·&nbsp;
         <span class="key">SHIFT</span> NITRO &nbsp;·&nbsp;
         <span class="key">P</span> PAUSE &nbsp;·&nbsp;
-        <span class="key">M</span> AUDIO
+        <span class="key">M</span> AUDIO &nbsp;·&nbsp; <span class="key">SPACE</span> HANDBRAKE &nbsp;·&nbsp; <span class="key">V</span> CAMERA
       </div>
     </div>
 
@@ -718,6 +730,10 @@
       <p>Take a breath. Your run is frozen.</p>
       <button id="resume-btn" class="btn">RESUME</button>
       <button id="pause-restart-btn" class="btn">RESTART</button>
+<button id="pause-menu-btn" class="btn secondary">MAIN MENU</button>
+<label class="graphics-setting">Graphics <select data-quality aria-label="Graphics quality (reloads game)">
+<option value="auto">Auto · adapts resolution</option><option value="low">Low · integrated graphics</option><option value="medium">Medium · balanced</option><option value="high">High · dedicated graphics</option>
+</select><span>Changing quality restarts the game</span></label>
     </div>
 
     <div id="race-results-screen" class="overlay" style="display:none">
@@ -731,6 +747,6 @@
     </div>
   </div>
 
-  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/bootstrap.js"></script>
 </body>
 </html>

@@ -17,7 +17,7 @@ export class Input {
     this.orientationHandler = null;
 
     this.isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (this.isTouch) this.initTouch();
+    // Desktop web game: touch laptops retain the keyboard layout.
   }
 
   initTouch() {
@@ -92,13 +92,15 @@ export class Input {
 
   clearAll() {
     this.keys.clear();
+    this.tiltSteer = 0;
     for (const k of Object.keys(this.touch)) this.touch[k] = false;
   }
 
   get throttle() { return this.keys.has('KeyW') || this.keys.has('ArrowUp') || this.touch.gas; }
   get brake() {
-    return this.keys.has('KeyS') || this.keys.has('ArrowDown') || this.keys.has('Space') || this.touch.brake;
+    return this.keys.has('KeyS') || this.keys.has('ArrowDown') || this.touch.brake;
   }
+  get handbrake() { return this.keys.has('Space'); }
   get nitro() { return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touch.nitro; }
   get steer() {
     let s = 0;

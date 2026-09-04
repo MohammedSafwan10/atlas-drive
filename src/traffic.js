@@ -7,7 +7,7 @@ import { GRAPHICS, IS_MOBILE } from './platform.js';
 import { modeForSegment, rampLips, rampSurfaceLift } from './features.js';
 import { RACE_DIFFICULTIES, RACE_DISTANCE, RACER_NAMES } from './race.js';
 
-const GRAVITY = 24;
+const GRAVITY = 16;
 const RIVAL_MODEL_URL = '/assets/ferrari-rival.glb';
 const RIVAL_SHADOW_PARTS = new Set(['body', 'wheel', 'tire']);
 
@@ -296,7 +296,7 @@ export class Traffic {
     car.mesh.visible = true;
   }
 
-  update(dt, playerZ, playerX, onNearMiss, onCrash) {
+  update(dt, playerZ, playerX, onNearMiss, onCrash, playerY = 0) {
     if (this.raceMode) return;
     // Maintain traffic density
     this.spawnTimer -= dt;
@@ -329,7 +329,7 @@ export class Traffic {
       }
       if (car.airborne) {
         car.airTime += dt;
-        car.airY += car.airVy * dt;
+        car.airY += car.airVy * dt - 0.5 * GRAVITY * dt * dt;
         car.airVy -= GRAVITY * dt;
         if (car.airY <= 0 && car.airVy < 0) {
           car.airY = 0;
@@ -358,7 +358,7 @@ export class Traffic {
       const dz = Math.abs(car.z - playerZ);
 
       // Collision (AABB)
-      if (dx < car.halfW + 0.95 && dz < car.halfL + 2.2) {
+      if (Math.abs(car.mesh.position.y - playerY) < 1.25 && dx < car.halfW + 0.95 && dz < car.halfL + 2.2) {
         if (!car.hasCollided) {
           car.hasCollided = true;
           // Propel hit traffic car forward so player doesn't remain trapped
@@ -372,7 +372,7 @@ export class Traffic {
       // Near miss: passed closely without collision
       if (!car.passed && car.z > playerZ + 2.5) {
         car.passed = true;
-        if (dx < 2.2) onNearMiss();
+        if (dx < 2.2 && !car.hasCollided) onNearMiss();
       }
     }
   }
@@ -443,6 +443,7 @@ export class Traffic {
       car.z = slot.z;
       car.speed = slot.speed;
       car.finished = false;
+      car.finishTime = null;
       car.hasCollided = false;
       car.laneTimer = 0.8 + i * 0.45;
       car.collisionCooldown = 0;
@@ -484,6 +485,7 @@ export class Traffic {
       if (!car?.mesh.visible) continue;
       car.collisionCooldown = Math.max(0, car.collisionCooldown - dt);
 
+      const previousZ = car.z;
       if (running) {
         car.raceElapsed += dt;
         const racerProgress = Math.max(0, -car.z);
@@ -645,16 +647,20 @@ export class Traffic {
         car.x += (car.targetX - car.x) * Math.min(1, dt * lateralResponse);
         car.lateralVelocity += (((car.x - previousX) / Math.max(dt, 0.001)) - car.lateralVelocity) * Math.min(1, dt * 6);
         car.z -= car.speed * dt;
-        if (-car.z >= RACE_DISTANCE) car.finished = true;
+        if (!car.finished && -car.z >= RACE_DISTANCE) {
+          car.finished = true;
+          const fraction = clamp((previousZ + RACE_DISTANCE) / Math.max(0.001, previousZ - car.z), 0, 1);
+          car.finishTime = car.raceElapsed - dt + fraction * dt;
+        }
       }
 
       // Ramp launch check for race rivals
       if (!car.airborne && car.speed > 12 && Math.abs(car.x) < 3.4) {
-        const lip = car.z - car.speed * dt;
+        const lip = car.z;
         const k = Math.round(lip / SEG_LEN);
         if (modeForSegment(k) === 'ramp') {
           for (const edge of rampLips(k)) {
-            if (car.z >= edge && lip < edge) {
+            if (previousZ >= edge && lip < edge) {
               car.airborne = true;
               car.airTime = 0;
               car.airY = Math.max(car.airY || 0, 1.35);
@@ -667,7 +673,7 @@ export class Traffic {
       }
       if (car.airborne) {
         car.airTime += dt;
-        car.airY += car.airVy * dt;
+        car.airY += car.airVy * dt - 0.5 * GRAVITY * dt * dt;
         car.airVy -= GRAVITY * dt;
         if (car.airY <= 0 && car.airVy < 0) {
           car.airY = 0;
@@ -698,7 +704,7 @@ export class Traffic {
 
       const dx = Math.abs(car.x - player.x);
       const dz = Math.abs(car.z - player.z);
-      if (running && car.collisionCooldown <= 0 && dx < car.halfW + 0.92 && dz < car.halfL + 2.15) {
+      if (running && Math.abs(car.mesh.position.y - player.group.position.y) < 1.25 && car.collisionCooldown <= 0 && dx < car.halfW + 0.92 && dz < car.halfL + 2.15) {
         car.collisionCooldown = 0.85;
         car.speed *= 0.82;
         onCrash(car);
@@ -706,21 +712,27 @@ export class Traffic {
     }
   }
 
-  getRaceStandings(playerZ) {
-    const entries = [{ name: RACER_NAMES[0], progress: Math.max(0, -playerZ), player: true }];
+  getRaceStandings(playerZ, playerTime = Infinity) {
+    const entries = [{ name: RACER_NAMES[0], progress: Math.max(0, -playerZ), finishTime: -playerZ >= RACE_DISTANCE ? playerTime : null, player: true }];
     for (let i = 0; i < 3; i++) {
       const car = this.cars[i];
       entries.push({
         name: RACER_NAMES[i + 1],
         progress: Math.max(0, -car.z),
         player: false,
+        finishTime: car.finishTime,
         x: car.x,
         z: car.z,
         speed: car.speed,
         color: COLORS[i],
       });
     }
-    entries.sort((a, b) => b.progress - a.progress);
+    entries.sort((a, b) => {
+      if (a.finishTime != null && b.finishTime != null) return a.finishTime - b.finishTime;
+      if (a.finishTime != null) return -1;
+      if (b.finishTime != null) return 1;
+      return b.progress - a.progress;
+    });
     return entries;
   }
 }

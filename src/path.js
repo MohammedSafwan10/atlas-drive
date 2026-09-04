@@ -39,3 +39,7 @@ export function placeOnRoad(object, z, lateral = 0, height = 0) {
   object.rotation.set(roadPitch(z), roadYaw(z), 0);
   return object;
 }
+
+export function roadCurvature(z) {
+  return (roadYaw(z + 1) - roadYaw(z - 1)) / 2;
+}
