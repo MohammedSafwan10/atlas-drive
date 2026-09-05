@@ -551,6 +551,10 @@
     .controls-hint { max-width: 900px; line-height: 2.3; text-align: center; padding: 0 20px; }
     .overlay { overflow-y: auto; }
     #pause-screen .btn { margin: 5px; }
+
+    #trial-status { position: absolute; top: 110px; left: 24px; color: #76e5ff; font-size: 14px; }
+    #drift-status { position: absolute; bottom: 130px; left: 0; width: 100%; text-align:center; color:#ffe18a; font-size:14px; letter-spacing:2px; }
+    .mode-buttons { flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -640,6 +644,7 @@
       </div>
     </div>
 
+    <div id="trial-status" style="display:none"></div><div id="drift-status"></div>
     <button id="pause-btn" aria-label="Pause game">Ⅱ</button>
     <button id="fullscreen-btn" aria-label="Toggle fullscreen">⛶</button>
     <button id="sound-btn" aria-label="Mute game audio">🔊</button>
@@ -653,6 +658,7 @@
           <strong>4-CAR SPRINT</strong>
           <span>Race three tactical rivals across Alpine Pass</span>
         </button>
+        <button id="start-trial-btn" class="mode-card"><strong>TIME TRIAL</strong><span>Clear daylight · Beat your saved ghost</span></button>
         <button id="start-endless-btn" class="mode-card">
           <strong>ENDLESS HIGHWAY</strong>
           <span>Traffic dodging · 3 lives · score attack</span>

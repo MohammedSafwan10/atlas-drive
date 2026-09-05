@@ -114,6 +114,7 @@ export class GameAudio {
     this.rivalSource.start();
 
     this.noiseBuffer = this._makeNoiseBuffer(2);
+    this.tyreGain = this._makeNoiseLoop('bandpass', 1800, 2.5);
     this.roadGain = this._makeNoiseLoop('bandpass', 720, 0.75);
     this.nitroGain = this._makeNoiseLoop('highpass', 1450, 0.55);
     this.weatherGain = this._makeNoiseLoop('lowpass', 2600, 0.25);
@@ -191,9 +192,10 @@ export class GameAudio {
   update(car, playing, inTunnel = false, rivals = []) {
     if (!this.ready) return;
     const now = this.context.currentTime;
-    const rpm = clamp(car.speed / 88);
+    const rpm = clamp(car.rpm || 0.18);
+    const roadSpeed = clamp(car.speed / 88);
     const active = playing && !this.paused ? 1 : 0;
-    const throttleLift = car.nitroActive ? 1.13 : 1;
+    const throttleLift = (0.4 + (car.throttleLoad || 0) * 0.6) * (car.nitroActive ? 1.13 : 1);
 
     const low = clamp(1 - rpm / 0.5);
     const mid = clamp(1 - Math.abs(rpm - 0.48) / 0.46);
@@ -205,7 +207,8 @@ export class GameAudio {
       this.engineSources[i].playbackRate.setTargetAtTime(rates[i], now, 0.055);
     }
 
-    this.roadGain.gain.setTargetAtTime(active * rpm * rpm * 0.16, now, 0.08);
+    this.roadGain.gain.setTargetAtTime(active * roadSpeed * roadSpeed * 0.16, now, 0.08);
+    this.tyreGain.gain.setTargetAtTime(active * (car.slip || 0) * 0.08, now, 0.08);
     this.nitroGain.gain.setTargetAtTime(active * (car.nitroActive ? 0.24 : 0), now, 0.035);
     let nearest = null;
     let nearestDistance = Infinity;
@@ -363,6 +366,7 @@ export class GameAudio {
     const now = this.context.currentTime;
     this.engineGains.forEach((gain) => gain.gain.setTargetAtTime(0, now, 0.035));
     this.roadGain.gain.setTargetAtTime(0, now, 0.035);
+    this.tyreGain.gain.setTargetAtTime(active * (car.slip || 0) * 0.08, now, 0.08);
     this.nitroGain.gain.setTargetAtTime(0, now, 0.035);
     this.rivalGain?.gain.setTargetAtTime(0, now, 0.035);
     this.weatherGain?.gain.setTargetAtTime(0, now, 0.12);

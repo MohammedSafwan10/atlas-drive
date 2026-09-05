@@ -1,3 +1,4 @@
+import { GhostTrial } from './ghost.js';
 import { FixedStepper, damp } from './physics.js';
 import { QUALITY } from './platform.js';
 import * as THREE from 'three';
@@ -29,6 +30,7 @@ const road = new Road(scene);
 const environment = new Environment(scene);
 const car = new Car(scene);
 const traffic = new Traffic(scene);
+const trial = new GhostTrial(scene);
 const raceCourse = new RaceCourse(scene);
 const effects = new Effects(scene, camera, car);
 const hud = new HUD();
@@ -113,6 +115,7 @@ function resetCommon() {
   playerCheckpoint = 0;
   pendingRaceResult = null;
   finishPresentation.stop();
+  trial.hide();
   hud.showFinishCinematic(false);
   clock.getDelta();
 }
@@ -122,6 +125,7 @@ let pendingMode = 'race';
 function startEndless() {
   menuInSetup = false;
   gameMode = 'endless';
+  document.getElementById('trial-status').style.display='none';
   resetCommon();
   traffic.reset();
   raceCourse.setVisible(false);
@@ -131,15 +135,22 @@ function startEndless() {
   audio.ui(620);
 }
 
-function startRace() {
+function startRace(mode = 'race') {
   menuInSetup = false;
-  gameMode = 'race';
+  gameMode = mode;
   resetCommon();
   car.x = 0;
   car.syncToRoad();
-  traffic.resetRace(raceDifficulty);
+  if (gameMode === 'trial') {
+    traffic.reset();
+    timeOfDay.setMode('day'); weather.setMode('clear');
+    weather.intensity = weather.targetIntensity = 0;
+    hud.setTimeMode('day'); hud.setWeatherMode('clear');
+    trial.start(car);
+  } else traffic.resetRace(raceDifficulty);
   raceCourse.setVisible(true);
   hud.setMode('race');
+  document.getElementById('trial-status').style.display = gameMode === 'trial' ? 'block' : 'none';
   raceCountdown = 3.25;
   countdownStage = 4;
   state = 'countdown';
@@ -157,7 +168,7 @@ function openSetup(mode = 'race') {
 }
 
 function confirmLaunch() {
-  if (pendingMode === 'race') startRace();
+  if (pendingMode === 'race' || pendingMode === 'trial') startRace(pendingMode);
   else startEndless();
 }
 
@@ -177,12 +188,14 @@ function selectDifficulty(difficulty) {
 }
 
 function selectTime(mode) {
+  if(gameMode==='trial' && state!=='start' && state!=='loading') return;
   timeOfDay.setMode(mode);
   hud.setTimeMode(timeOfDay.mode);
   audio.ui(mode === 'night' ? 420 : mode === 'sunset' ? 540 : 660);
 }
 
 function selectWeather(mode) {
+  if(gameMode==='trial' && state!=='start' && state!=='loading') return;
   weather.setMode(mode);
   hud.setWeatherMode(weather.mode);
   audio.ui(mode === 'storm' ? 380 : mode === 'clear' ? 720 : 560);
@@ -194,15 +207,17 @@ function cycleTime() {
 }
 
 function restartGame() {
-  if (gameMode === 'race') startRace();
+  if (gameMode === 'race' || gameMode === 'trial') startRace(gameMode);
   else startEndless();
 }
 
 function showMenu() {
   state = 'start';
+  document.getElementById('trial-status').style.display='none';
   menuInSetup = false;
   input.clearAll();
   finishPresentation.stop();
+  trial.hide();
   car.reset();
   traffic.reset();
   road.reset(0);
@@ -276,6 +291,14 @@ function raceCollision(rival) {
 }
 
 function finishRace() {
+  if (gameMode === 'trial') {
+    const result = trial.finish(raceTime,car);
+    state='finished'; input.clearAll(); car.nitroActive=false;
+    hud.showRaceResults(1,raceTime,raceTopSpeed,raceDifficulty,result.bestTime,result.isRecord);
+    hud.raceResultPosition.textContent='TIME TRIAL';
+    hud.raceResultStats.innerHTML = `Time ${raceTime.toFixed(3)} s · Best ${result.bestTime.toFixed(3)} s<br/>${result.isRecord ? 'NEW BEST · ' : ''}${result.saved ? 'Ghost saved on this browser' : result.isRecord ? 'Ghost could not be saved (storage unavailable or run over 10 minutes)' : 'Best ghost retained'}`;
+    audio.finish(1); return;
+  }
   if (state === 'finished' || state === 'finishCinematic') return;
   const standings = traffic.getRaceStandings(car.z, raceTime);
   const position = standings.findIndex((entry) => entry.player) + 1;
@@ -283,7 +306,7 @@ function finishRace() {
   car.nitroActive = false;
   input.clearAll();
   hud.showCountdown('');
-  const recordKey = `atlas-drive-v2-best-${raceDifficulty}`;
+  const recordKey = `atlas-drive-v3-best-${raceDifficulty}`;
   let previousBest = Number.POSITIVE_INFINITY;
   try { previousBest = Number(localStorage.getItem(recordKey)) || Number.POSITIVE_INFINITY; } catch { /* storage may be disabled */ }
   const isRecord = raceTime < previousBest;
@@ -416,7 +439,8 @@ function simulate(dt) {
     } else {
       raceTime += dt;
       raceTopSpeed = Math.max(raceTopSpeed, car.kmh);
-      traffic.updateRace(dt, car, true, raceCollision);
+      if (gameMode === 'race') traffic.updateRace(dt, car, true, raceCollision);
+      else trial.record(raceTime,car);
       raceCourse.update(car.z);
       const progress = Math.max(0, -car.z);
       while (playerCheckpoint < RACE_CHECKPOINTS.length - 1 && progress >= RACE_CHECKPOINTS[playerCheckpoint]) {
@@ -486,35 +510,46 @@ function tick() {
     );
     const targetLook = roadPoint(car.z - 18, car.x * (cameraMode === 2 ? 1 : 0.82), 0.95 + (cameraMode === 2 ? car.airY : 0));
     // Smooth lateral suspension without adding longitudinal lag at race speed.
-    camPos.x = damp(camPos.x, targetPos.x, 12, dt);
-    camPos.y = damp(camPos.y, targetPos.y, 9, dt);
+    const followDt = state === 'paused' ? 0 : dt;
+    camPos.x = damp(camPos.x, targetPos.x, 12, followDt);
+    camPos.y = damp(camPos.y, targetPos.y, 9, followDt);
     camPos.z = targetPos.z;
-    camLook.lerp(targetLook, 1 - Math.exp(-14 * dt));
+    camLook.lerp(targetLook, 1 - Math.exp(-14 * followDt));
 
     // Apply impact impulse smoothly to camera position before projection
     if (impactShake > 0) {
-      impactShake = Math.max(0, impactShake - dt);
+      impactShake = Math.max(0, impactShake - followDt);
       const strength = Math.min(1, impactShake / 0.22) * 0.12;
       camPos.x += (Math.random() - 0.5) * strength;
       camPos.y += (Math.random() - 0.5) * strength;
     }
 
+    const cameraDt = state === 'paused' ? 0 : dt;
+    const targetFov = (cameraMode === 2 ? 70 : 64) + Math.min(7, car.speed / 12);
+    camera.fov = damp(camera.fov, targetFov, 3, cameraDt);
+    camera.updateProjectionMatrix();
     camera.position.copy(camPos);
     camera.lookAt(camLook);
   }
 
   hud.update(car, score);
-  if (gameMode === 'race') {
+  if (gameMode === 'race' || gameMode === 'trial') {
     const standings = traffic.getRaceStandings(car.z, raceTime);
     const position = standings.findIndex((entry) => entry.player) + 1;
     hud.updateRace({
       position,
       progress: Math.max(0, -car.z),
       time: raceTime,
-      standings,
+      standings: gameMode === 'trial' ? [{player:true,progress:Math.max(0,-car.z)}] : standings,
       playerX: car.x,
     });
   }
+  if(gameMode === 'trial') {
+    if(state === 'playing' || state === 'countdown') trial.update(raceTime);
+    hud.racePositionEl.textContent='TIME TRIAL';
+    document.getElementById('trial-status').textContent=trial.best ? `BEST ${trial.best.time.toFixed(3)} s · CYAN GHOST` : 'FIRST RUN · SET YOUR GHOST';
+  }
+  document.getElementById('drift-status').textContent = state==='playing' && car.isDrifting ? 'DRIFT · COUNTER-STEER TO CATCH' : '';
   hud.updateFps(frameTime);
   audio.update(
     car,
@@ -594,3 +629,5 @@ document.getElementById('fullscreen-btn').addEventListener('click', async () => 
     else await document.documentElement.requestFullscreen();
   } catch { hud.showNearMiss('Fullscreen unavailable'); }
 });
+
+document.getElementById('start-trial-btn').addEventListener('click',()=>{if(state==='start') startRace('trial');});

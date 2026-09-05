@@ -81,6 +81,16 @@ src/
 public/assets/     Runtime models, textures, panorama, and Draco decoder
 ```
 
+## Drifting and time trials
+
+Tap **Space** while steering above roughly 45 km/h to initiate a drift. Release the handbrake and gently counter-steer to regain grip; holding it continuously scrubs speed. Wet roads reduce grip. This is assisted arcade handling, not a full tyre simulation.
+
+Select **Time Trial** from the main menu for a solo 6 km run in locked clear daylight. Your first completed run sets the ghost; a faster run replaces it. The cyan ghost is non-colliding, interpolated from 20 Hz samples and saved only in this browser. Clearing browser storage removes it. Runs over ten minutes are not saved as ghosts, and a storage failure is reported in the results. A new physics-version key prevents older recordings and times being compared against changed handling.
+
+Wheel rigs separate steering from rolling, preserve the GLB bind rotation, and keep brake parts stationary. Rear wheels lock under the handbrake. Chassis pitch/roll and damped landing travel move separately from the tyres. Engine loops now follow a six-speed automatic RPM model with throttle/load response and tyre scrub audio. The camera changes field of view gradually with speed.
+
+Validation remains automated geometry/logic tests and production compilation; driving feel, sound balance and visual results still need interactive browser testing.
+
 ## Driving and graphics update
 
 - Fixed 120 Hz simulation decouples handling, race timers and collisions from display refresh rate.

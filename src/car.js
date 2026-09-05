@@ -1,3 +1,4 @@
+import { rigWheel, animateWheel } from './wheels.js';
 import { integrateHandling } from './physics.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -78,6 +79,7 @@ export class Car {
     }
     this.group.add(fallback);
     this.fallback = fallback;
+    this.wheelRigs = this.wheels.map((wheel, i) => rigWheel(wheel, i < 2));
 
     // ---- Real model: Ferrari GLB with Draco compression ----
     const draco = new DRACOLoader();
@@ -135,6 +137,11 @@ export class Car {
 
       this.group.add(carModel);
       this.wheels = gltfWheels;
+      this.wheelRigs = gltfWheels.map((wheel, i) => rigWheel(wheel, i < 2));
+      this.sprungBody = new THREE.Group();
+      const rigidWheels = new Set(this.wheelRigs.map(rig => rig.pivot));
+      for (const child of [...carModel.children]) if (!rigidWheels.has(child)) this.sprungBody.add(child);
+      carModel.add(this.sprungBody);
       this.modelReady = true;
       fallback.visible = false;
       draco.dispose();
@@ -169,6 +176,10 @@ export class Car {
     this.lateralVelocity = 0;
     this.bodyRoll = 0;
     this.bodyPitch = 0;
+    this.drift = this.driftYaw = this.slip = this.suspensionY = this.suspensionVelocity = 0;
+    this.isDrifting = false;
+    this.gear = 1; this.rpm = 0.18; this.throttleLoad = 0;
+    for (const rig of this.wheelRigs || []) { rig.angle = 0; animateWheel(rig, 0, 0, 0); }
     this.nitroAmount = 1.0;
     this.nitroActive = false;
     this.crashed = false;
@@ -178,6 +189,7 @@ export class Car {
     this.airTime = 0;
     this.justLanded = false;
     this.lastAirTime = 0;
+    if(this.sprungBody){this.sprungBody.rotation.set(0,0,0);this.sprungBody.position.y=0;}
     this.group.position.set(0, 0, 0);
     this.group.rotation.set(0, 0, 0);
     this.syncToRoad();
@@ -188,9 +200,9 @@ export class Car {
     roadPoint(this.z, this.x, (this.airY || 0) + surfaceLift, this.group.position);
     const airPitch = this.airborne ? -Math.atan2(this.airVy, Math.max(20, this.speed)) * 0.55 : 0;
     this.group.rotation.set(
-      roadPitch(this.z) + airPitch + this.bodyPitch,
-      roadYaw(this.z) - this.steerAngle * 0.055,
-      this.bodyRoll,
+      roadPitch(this.z) + airPitch,
+      roadYaw(this.z) + (this.driftYaw || 0),
+      0,
     );
   }
 
@@ -224,6 +236,7 @@ export class Car {
       this.airY += this.airVy * dt - 0.5 * GRAVITY * dt * dt;
       this.airVy -= GRAVITY * dt;
       if (this.airY <= 0 && this.airVy < 0) {
+        this.suspensionVelocity = -Math.min(0.65, Math.abs(this.airVy) * 0.035);
         this.airY = 0;
         this.airborne = false;
         if (this.airTime > 0.25) {
@@ -241,13 +254,14 @@ export class Car {
       light.scale.set((input.brake || input.handbrake) ? 1.16 : 1, (input.brake || input.handbrake) ? 1.16 : 1, 1);
     }
 
-    // Wheels spin + front steer
-    const wheelSpin = (this.speed / 0.36) * dt;
-    for (let i = 0; i < this.wheels.length; i++) {
-      const w = this.wheels[i];
-      w.rotation.x -= wheelSpin;
-      if (i < 2) w.rotation.y = -this.steerAngle * 0.06;
+    // Damped landing suspension. Small travel avoids tyres passing through asphalt.
+    this.suspensionVelocity += (-95 * this.suspensionY - 15 * this.suspensionVelocity) * dt;
+    this.suspensionY = THREE.MathUtils.clamp(this.suspensionY + this.suspensionVelocity * dt, -0.025, 0.035);
+    if (this.sprungBody) {
+      this.sprungBody.rotation.set(this.bodyPitch, 0, this.bodyRoll);
+      this.sprungBody.position.y = this.suspensionY;
     }
+    for (const rig of this.wheelRigs) animateWheel(rig, this.speed, -this.steerAngle / 4.5 * 0.24, dt, input.handbrake && !this.airborne);
 
     for (const beam of this.headlightBeams) beam.intensity = 0.25 + this.nightFactor * 210;
   }
